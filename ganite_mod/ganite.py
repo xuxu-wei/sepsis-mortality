@@ -7,8 +7,10 @@ import ganite_mod.logger as log
 import numpy as np
 import torch
 from ganite_mod.utils.random import enable_reproducible_results
+from ganite_mod.utils.metrics import RCT_ATE_l1_loss
 from torch import nn
 from sklearn.base import BaseEstimator, RegressorMixin
+from sklearn.metrics import mean_squared_error
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPS = 1e-10
@@ -577,7 +579,7 @@ class GaniteRegressor(Ganite, BaseEstimator, RegressorMixin):
             - hat{Y}(0): Predicted outcome under control (T=0), shape (n_samples,).
             - ITE: Individual Treatment Effect (hat{Y}(1) - hat{Y}(0)), shape (n_samples,).
         """
-        X = torch.tensor(X, dtype=torch.float32) if not isinstance(X, torch.Tensor) else X
+        X = self._check_tensor(X).float()
         hat_y1, hat_y0, ite = super().forward(X)
         return (
             hat_y1.cpu().numpy(),
@@ -628,3 +630,68 @@ class GaniteRegressor(Ganite, BaseEstimator, RegressorMixin):
         for param, value in params.items():
             setattr(self, param, value)
         return self
+    
+    def score(self, X, y):
+        """
+        Returns the negative mean squared error of the model on the given data.
+
+        Parameters
+        ----------
+        X : tuple of (features, treatment)
+            - `X[0]`: Feature matrix of shape (n_samples, n_features).
+            - `X[1]`: Treatment assignment vector of shape (n_samples,).
+        y : np.ndarray or torch.Tensor
+            Observed outcomes vector of shape (n_samples,).
+
+        Returns
+        -------
+        float
+            Negative mean squared error as the score.
+        """
+        
+        X_features, treatment = X
+        treatment = treatment.cpu().numpy() if isinstance(treatment, torch.Tensor) else treatment
+        y = y.cpu().numpy() if isinstance(y, torch.Tensor) else y
+
+        # Predict potential outcomes
+        hat_y1, hat_y0, _ = self.predict(X_features)  # hat_y1, hat_y0 are numpy arrays
+
+        # Select predictions based on treatment
+        y_pred = np.where(treatment == 1, hat_y1, hat_y0)  # Choose hat_y1 if treated, else hat_y0
+
+        # Ensure y and y_pred are numpy arrays for compatibility with sklearn.metrics
+        y_pred = y_pred if isinstance(y_pred, np.ndarray) else y_pred.cpu().numpy()
+
+        # Calculate and return the negative mean squared error
+        return -mean_squared_error(y, y_pred)
+
+    def ate_l1_loss(self, X, y):
+        """
+        Returns the negative mean squared error of the model on the given data.
+
+        Parameters
+        ----------
+        X : tuple of (features, treatment)
+            - `X[0]`: Feature matrix of shape (n_samples, n_features).
+            - `X[1]`: Treatment assignment vector of shape (n_samples,).
+        y : np.ndarray or torch.Tensor
+            Observed outcomes vector of shape (n_samples,).
+
+        Returns
+        -------
+        float
+            Negative mean squared error as the score.
+        """
+
+        X_features, treatment = X
+        X_features = self._check_tensor(X_features).float()
+        treatment = self._check_tensor(treatment).float()
+
+        treatment = treatment.cpu().numpy() if isinstance(treatment, torch.Tensor) else treatment
+        y = y.cpu().numpy() if isinstance(y, torch.Tensor) else y
+
+        # Predict potential outcomes
+        hat_y1, hat_y0, _ = self.predict(X_features)  # hat_y1, hat_y0 are numpy arrays
+
+        # Calculate and return the negative mean squared error
+        return -RCT_ATE_l1_loss(treatment, y, hat_y0, hat_y1, eval_strategy='observed_only')

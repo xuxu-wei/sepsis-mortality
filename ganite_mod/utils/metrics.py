@@ -2,6 +2,8 @@
 from typing import Tuple
 
 # third party
+import torch
+import pandas as pd
 import numpy as np
 from scipy import stats
 
@@ -98,3 +100,135 @@ def mean_confidence_interval(
     h = se * stats.t.ppf((1 + confidence) / 2.0, n - 1)
 
     return m, h
+
+
+def RCT_ATE(treatment: np.ndarray, y: np.ndarray) -> float:
+    """
+    Calculate the Average Treatment Effect (ATE) in a Randomized Controlled Trial (RCT) setting.
+
+    The ATE measures the difference in the expected outcome between the treatment and control groups.
+    This metric is only applicable for models trained and evaluated on RCT data.
+
+    Parameters
+    ----------
+    treatment : np.ndarray
+        Binary treatment assignment vector of shape (n_samples,).
+        Contains 1 for treated individuals and 0 for control individuals.
+    y : np.ndarray
+        Observed outcome vector of shape (n_samples,).
+
+    Returns
+    -------
+    float
+        The Average Treatment Effect (ATE), defined as:
+        `ATE = E[Y | T=1] - E[Y | T=0]`
+
+    Raises
+    ------
+    ValueError
+        If the lengths of `treatment` and `y` do not match.
+
+    Notes
+    -----
+    This function assumes the dataset originates from a randomized controlled trial (RCT),
+    ensuring that the treatment assignment is unconfounded.
+    """
+    # Validate input lengths
+    if len(treatment) != len(y):
+        raise ValueError("The lengths of `treatment` and `y` must be the same.")
+
+    # Convert inputs to NumPy arrays
+    treatment = np.asarray(treatment)
+    y = np.asarray(y)
+
+    # Calculate the mean outcomes for treatment (T=1) and control (T=0) groups
+    E_y_1 = y[treatment == 1].mean()
+    E_y_0 = y[treatment == 0].mean()
+
+    # Compute and return ATE
+    return E_y_1 - E_y_0
+
+
+def RCT_ATE_l1_loss(
+    treatment: np.ndarray,
+    y_true: np.ndarray,
+    y_pred_0: np.ndarray,
+    y_pred_1: np.ndarray,
+    eval_strategy: str = "observed_only"
+) -> float:
+    """
+    Calculate the L1 loss for ATE estimation in a Randomized Controlled Trial (RCT) setting.
+
+    The L1 loss quantifies the absolute difference between the true ATE (computed from observed data)
+    and the predicted ATE (computed from model predictions). This is applicable for models trained
+    and evaluated on RCT data.
+
+    Parameters
+    ----------
+    treatment : np.ndarray
+        Binary treatment assignment vector of shape (n_samples,).
+        Contains 1 for treated individuals and 0 for control individuals.
+    y_true : np.ndarray
+        Observed outcome vector of shape (n_samples,).
+    y_pred_0 : np.ndarray
+        Predicted potential outcomes under control (T=0), of shape (n_samples,).
+    y_pred_1 : np.ndarray
+        Predicted potential outcomes under treatment (T=1), of shape (n_samples,).
+    eval_strategy : str, optional
+        Strategy to calculate the predicted ATE:
+        - 'observed_only': Computes ATE_pred using only observed treatment groups.
+        - 'mean_ITE': Computes ATE_pred as the mean of the predicted individual treatment effects (default is 'observed_only').
+
+    Returns
+    -------
+    float
+        The L1 loss for ATE estimation:
+        `L1_loss = |ATE_true - ATE_pred|`
+    
+    Raises
+    ------
+    ValueError
+        If the lengths of `treatment`, `y_true`, `y_pred_0`, and `y_pred_1` do not match.
+        If `eval_strategy` is not one of {'observed_only', 'mean_ITE'}.
+
+    Notes
+    -----
+    - This function assumes the dataset originates from a randomized controlled trial (RCT),
+      ensuring that the treatment assignment is unconfounded.
+    - The true ATE is calculated based on observed data, while the predicted ATE depends on the 
+      chosen evaluation strategy.
+
+    Examples
+    --------
+    >>> treatment = np.array([1, 0, 1, 0])
+    >>> y_true = np.array([5.0, 3.0, 6.0, 2.0])
+    >>> y_pred_0 = np.array([4.5, 3.1, 5.5, 2.2])
+    >>> y_pred_1 = np.array([5.5, 4.0, 6.5, 3.0])
+    >>> RCT_ATE_l1_loss(treatment, y_true, y_pred_0, y_pred_1)
+    0.15
+    """
+    # Convert inputs to NumPy arrays
+    treatment = np.asarray(treatment)
+    y_true = np.asarray(y_true)
+    y_pred_0 = np.asarray(y_pred_0)
+    y_pred_1 = np.asarray(y_pred_1)
+
+    # Validate input lengths
+    if not (len(treatment) == len(y_true) == len(y_pred_0) == len(y_pred_1)):
+        raise ValueError("The lengths of `treatment`, `y_true`, `y_pred_0`, and `y_pred_1` must match.")
+
+    # Compute true ATE based on observed outcomes
+    mask_t1 = treatment == 1
+    mask_t0 = treatment == 0
+    ATE_true = y_true[mask_t1].mean() - y_true[mask_t0].mean()
+
+    # Compute predicted ATE based on the selected strategy
+    if eval_strategy == "observed_only":
+        ATE_pred = y_pred_1[mask_t1].mean() - y_pred_0[mask_t0].mean()
+    elif eval_strategy == "mean_ITE":
+        ATE_pred = y_pred_1.mean() - y_pred_0.mean()
+    else:
+        raise ValueError("`eval_strategy` must be one of {'observed_only', 'mean_ITE'}.")
+
+    # Compute and return L1 loss
+    return np.abs(ATE_true - ATE_pred)
