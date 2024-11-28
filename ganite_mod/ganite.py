@@ -487,3 +487,144 @@ class Ganite(nn.Module):
         else:
             return torch.from_numpy(np.asarray(X)).to(DEVICE)
 
+
+class GaniteRegressor(Ganite, BaseEstimator, RegressorMixin):
+    """
+    Scikit-learn compatible wrapper for the GANITE framework.
+    This implementation extends Ganite to integrate with scikit-learn's
+    pipeline and model selection utilities.
+
+    Parameters
+    ----------
+    dim_in : int
+        Number of the input features, used to configure network dimensions.
+    binary_y : bool
+        Indicates whether the observed outcome is binary (True) or continuous (False).
+    dim_hidden : int, optional
+        The number of hidden units in the neural network (default is 100).
+    alpha : float, optional
+        Weight for the generator's GAN loss (default is 0.1).
+    beta : float, optional
+        Weight for the inference loss component (default is 0).
+    minibatch_size : int, optional
+        Batch size for training (default is 256).
+    depth : int, optional
+        Depth of the neural network (default is 0).
+    num_iterations : int, optional
+        Number of training iterations (default is 5000).
+    num_discr_iterations : int, optional
+        Number of iterations for the discriminator's update in each training step (default is 1).
+    """
+
+    def __init__(
+        self,
+        dim_in,
+        binary_y,
+        dim_hidden=100,
+        alpha=0.1,
+        beta=0,
+        minibatch_size=256,
+        depth=0,
+        num_iterations=5000,
+        num_discr_iterations=1,
+    ):
+        super(GaniteRegressor, self).__init__(
+            dim_in=dim_in,
+            binary_y=binary_y,
+            dim_hidden=dim_hidden,
+            alpha=alpha,
+            beta=beta,
+            minibatch_size=minibatch_size,
+            depth=depth,
+            num_iterations=num_iterations,
+            num_discr_iterations=num_discr_iterations,
+        )
+
+    def fit(self, X, y):
+        """
+        Wrapper for the GANITE `fit` method. Assumes `X` is a tuple (features, treatment).
+
+        Parameters
+        ----------
+        X : tuple of (np.ndarray or torch.Tensor, np.ndarray or torch.Tensor)
+            - `X[0]`: Feature matrix of shape (n_samples, n_features).
+            - `X[1]`: Treatment assignment vector of shape (n_samples,).
+        y : np.ndarray or torch.Tensor
+            Observed outcomes vector of shape (n_samples,).
+
+        Returns
+        -------
+        self : GaniteRegressor
+            The fitted model.
+        """
+        X_features, treatment = X
+        return super().fit(X_features, treatment, y)
+    
+    def predict(self, X):
+        """
+        Predict potential outcomes for the provided feature matrix.
+
+        Parameters
+        ----------
+        X : np.ndarray or torch.Tensor
+            Feature matrix of shape (n_samples, n_features).
+
+        Returns
+        -------
+        np.ndarray
+            A tuple of predicted outcomes:
+            - hat{Y}(1): Predicted outcome under treatment (T=1), shape (n_samples,).
+            - hat{Y}(0): Predicted outcome under control (T=0), shape (n_samples,).
+            - ITE: Individual Treatment Effect (hat{Y}(1) - hat{Y}(0)), shape (n_samples,).
+        """
+        X = torch.tensor(X, dtype=torch.float32) if not isinstance(X, torch.Tensor) else X
+        hat_y1, hat_y0, ite = super().forward(X)
+        return (
+            hat_y1.cpu().numpy(),
+            hat_y0.cpu().numpy(),
+            ite.cpu().numpy(),
+        )
+
+    def get_params(self, deep=True):
+        """
+        Get parameters for this regressor. Required for compatibility with sklearn.
+
+        Parameters
+        ----------
+        deep : bool, optional
+            Whether to return deep parameters (default is True).
+
+        Returns
+        -------
+        dict
+            Dictionary of parameters.
+        """
+        return {
+            "dim_in": self.counterfactual_generator.dim_in,
+            "binary_y": self.counterfactual_generator.binary_y,
+            "dim_hidden": self.counterfactual_generator.dim_hidden,
+            "alpha": self.alpha,
+            "beta": self.beta,
+            "minibatch_size": self.minibatch_size,
+            "depth": self.depth,
+            "num_iterations": self.num_iterations,
+            "num_discr_iterations": self.num_discr_iterations,
+        }
+
+    def set_params(self, **params):
+        """
+        Set parameters for this regressor. Required for compatibility with sklearn.
+
+        Parameters
+        ----------
+        **params : dict
+            Parameters to set.
+
+        Returns
+        -------
+        self : GaniteRegressor
+            The updated regressor.
+        """
+        for param, value in params.items():
+            setattr(self, param, value)
+        return self
