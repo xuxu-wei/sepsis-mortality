@@ -665,7 +665,7 @@ class GaniteRegressor(Ganite, BaseEstimator, RegressorMixin):
         # Calculate and return the negative mean squared error
         return -mean_squared_error(y, y_pred)
 
-    def ate_l1_loss(self, X, y, eval_strategy='observed_only'):
+    def ate_l1_loss(self, X, y, eval_strategy='mean_ITE'):
         """
         Returns the negative mean squared error of the model on the given data.
 
@@ -676,6 +676,10 @@ class GaniteRegressor(Ganite, BaseEstimator, RegressorMixin):
             - `X[1]`: Treatment assignment vector of shape (n_samples,).
         y : np.ndarray or torch.Tensor
             Observed outcomes vector of shape (n_samples,).
+        eval_strategy : str, optional
+            Strategy to calculate the predicted ATE:
+            - 'observed_only': Computes ATE_pred using only observed treatment groups.
+            - 'mean_ITE': Computes ATE_pred as the mean of the predicted individual treatment effects (default is 'observed_only').
 
         Returns
         -------
