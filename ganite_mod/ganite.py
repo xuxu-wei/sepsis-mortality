@@ -665,7 +665,7 @@ class GaniteRegressor(Ganite, BaseEstimator, RegressorMixin):
         # Calculate and return the negative mean squared error
         return -mean_squared_error(y, y_pred)
 
-    def ate_l1_loss(self, X, y):
+    def ate_l1_loss(self, X, y, eval_strategy='observed_only'):
         """
         Returns the negative mean squared error of the model on the given data.
 
@@ -694,4 +694,4 @@ class GaniteRegressor(Ganite, BaseEstimator, RegressorMixin):
         hat_y1, hat_y0, _ = self.predict(X_features)  # hat_y1, hat_y0 are numpy arrays
 
         # Calculate and return the negative mean squared error
-        return -RCT_ATE_l1_loss(treatment, y, hat_y0, hat_y1, eval_strategy='observed_only')
+        return -RCT_ATE_l1_loss(treatment, y, hat_y0, hat_y1, eval_strategy=eval_strategy)
