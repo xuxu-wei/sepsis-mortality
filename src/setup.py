@@ -11,7 +11,7 @@ if sys.platform.startswith('win'):
     ROOT = f'{src_path}/../'
 else:
     SRC = src_path
-    ROOT = f'/work/wang_lab/xuxu.wei/sepsis/'
+    ROOT = f'/home/xuxu.wei/sepsis-reasearch/'
 
 DATA = f'{ROOT}/data/'
 FIGS = f'{ROOT}/figures/'
