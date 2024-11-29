@@ -1,5 +1,6 @@
 # %%
 import os, sys
+from datetime import datetime
 import argparse
 import pandas as pd
 import torch
@@ -18,12 +19,15 @@ if in_notebook():
     src_path = os.path.abspath(os.path.join(notebook_dir, '..'))
     RUN_MODE = 'eval'
     N_TRIAL = 50
+    OUTCOME_IX = 0
 else:
     src_path = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('-n',metavar= 50, type=int, default=50,help='''optuna优化尝试次数''')
+    parser.add_argument('-outcome_ix',metavar= 0, type=int, default=0,help='''选择预测结局, 为 `get_ite_features()`返回的预设 outcomes 列表的索引''')
     sys_args = parser.parse_args()
     N_TRIAL = sys_args.n
+    OUTCOME_IX = sys_args.outcome_ix
 
 sys.path.append(src_path) if src_path not in sys.path else None
 
@@ -37,7 +41,7 @@ from ganite_mod.utils.metrics import *
 # %%
 df = pd.read_csv(f'{DATA}/imputed/EXIT_SEP_clean_imputed.tsv.gz', sep='\t', index_col='ID')
 features, _, _, treatment, outcomes = get_ite_features()
-current_outcome = outcomes[0] # 设置预测目标
+current_outcome = outcomes[OUTCOME_IX] # 设置预测目标
 
 df_train = df.sample(frac=0.7, random_state=19960816)
 df_test = df[~df.index.isin(df_train.index)].copy()
@@ -49,6 +53,17 @@ y = np.array(y)
 
 # %% [markdown]
 # # 随机搜索
+
+# %%
+# 建立文件输出路径
+current_time = datetime.now()
+formatted_time = current_time.strftime("%Y-%m-%d_%H-%M")
+
+optuna_result_path = f'{MODELS}/GANIT_optuna-{current_outcome}-{formatted_time}-{sys.platform}/'
+optuna_fig_path = f'{FIGS}/GANIT_optuna-{current_outcome}-{formatted_time}-{sys.platform}/'
+
+os.makedirs(optuna_fig_path, exist_ok=True)
+os.makedirs(optuna_result_path, exist_ok=True)
 
 # %%
 def objective(trial):
@@ -136,7 +151,7 @@ study = optuna.create_study(directions=["maximize", "maximize", "maximize"])  # 
 study.optimize(objective, n_trials=N_TRIAL, callbacks=[trial_callback])
 
 # 保存实验结果
-with open(f"{MODELS}/GANIT_optuna_study.pkl", "wb") as f:
+with open(f"{optuna_result_path}/optuna_study.pkl", "wb") as f:
     print('调参结束，正在保存optuna调参试验结果')
     pickle.dump(study, f)
 
@@ -151,13 +166,13 @@ pareto_data = [
     {"trial_number": trial.number, "values": trial.values, "params": trial.params}
     for trial in pareto_front
 ]
-with open(f"{MODELS}/GANITE_pareto_solutions.json", "w") as f:
+with open(f"{optuna_result_path}/pareto_solutions.json", "w") as f:
     json.dump(pareto_data, f)
 
 
 # 保存完整调参历史为 xlsx 文件
 df_trials = study.trials_dataframe()
-df_trials.to_excel(f"{MODELS}/GANITE_optuna_tuning_history.xlsx", index=False)
+df_trials.to_excel(f"{optuna_result_path}/tuning_history.xlsx", index=False)
 
 # 使用一个 Pareto 最优解重新初始化模型
 best_trial = pareto_front[0] # 选择第一个 Pareto 解
@@ -180,14 +195,9 @@ best_model.fit((X, W), y)
 
 # 保存最佳模型
 print('训练完成，保存模型参数')
-torch.save(best_model.state_dict(), f"{MODELS}/GANITE_best_weights_optuna.pth")
+torch.save(best_model.state_dict(), f"{optuna_result_path}/GANITE_weights.pth")
 
 # %%
-# 加载 study 对象
-print('重新加载 optuna study 并进行调参过程可视化')
-with open(f"{MODELS}/GANIT_optuna_study.pkl", "rb") as f:
-    study = pickle.load(f)
-
 from optuna.visualization import (
     plot_parallel_coordinate,
     plot_param_importances,
@@ -196,7 +206,7 @@ from optuna.visualization import (
     plot_optimization_history,
     plot_pareto_front,
 )
-os.makedirs(f"{FIGS}/GANIT_optuna", exist_ok=True)
+
 # 绘制不同的图表
 target_args_1 = dict(target = lambda t: -t.values[0], target_name="Berier Score")
 target_args_2 = dict(target = lambda t: -t.values[1], target_name="ATE_observed L1-loss")
@@ -208,37 +218,37 @@ targets_args = dict(targets = lambda t: [-t.values[0], -t.values[1], -t.values[2
 parallel_coordinate_fig = plot_parallel_coordinate(study, **target_args_1)
 parallel_coordinate_fig.update_layout(width=800, height=600)
 parallel_coordinate_fig.show() if in_notebook() else None
-parallel_coordinate_fig.write_image(f"{FIGS}/GANIT_optuna/parallel_coordinate_fig.svg", format='svg', scale=2, width=700, height=500) if not in_notebook() else None
+parallel_coordinate_fig.write_image(f"{optuna_fig_path}/parallel_coordinate_fig.svg", format='svg', scale=2, width=700, height=500) if not in_notebook() else None
 
 # 参数重要性图
 param_importance_fig = plot_param_importances(study, **target_args_1)
 param_importance_fig.update_layout(width=800, height=600)
 param_importance_fig.show() if in_notebook() else None
-param_importance_fig.write_image(f"{FIGS}/GANIT_optuna/param_importance_fig.svg", format='svg', scale=2, width=700, height=500) if not in_notebook() else None
+param_importance_fig.write_image(f"{optuna_fig_path}/param_importance_fig.svg", format='svg', scale=2, width=700, height=500) if not in_notebook() else None
 
 # 平行曲面图
 contour_fig = plot_contour(study, **target_args_1)
 contour_fig.update_layout(width=1200, height=1200)
 contour_fig.show() if in_notebook() else None
-contour_fig.write_image(f"{FIGS}/GANIT_optuna/contour_fig.svg", format='svg', scale=2, width=1200, height=1200) if not in_notebook() else None
+contour_fig.write_image(f"{optuna_fig_path}/contour_fig.svg", format='svg', scale=2, width=1200, height=1200) if not in_notebook() else None
 
 # 超参数分布图
 slice_fig = plot_slice(study, **target_args_1)
 slice_fig.show() if in_notebook() else None
-slice_fig.write_image(f"{FIGS}/GANIT_optuna/slice_fig.svg", format='svg', scale=2, width=2500, height=400) if not in_notebook() else None
+slice_fig.write_image(f"{optuna_fig_path}/slice_fig.svg", format='svg', scale=2, width=2500, height=400) if not in_notebook() else None
 
 # 优化历史图
 optimization_history_fig = plot_optimization_history(study, **target_args_1)
 optimization_history_fig.update_layout(width=700, height=500)
 optimization_history_fig.show() if in_notebook() else None
-optimization_history_fig.write_image(f"{FIGS}/GANIT_optuna/optimization_history_fig.svg", format='svg', scale=2, width=700, height=500) if not in_notebook() else None
+optimization_history_fig.write_image(f"{optuna_fig_path}/optimization_history_fig.svg", format='svg', scale=2, width=700, height=500) if not in_notebook() else None
 
 # Pareto 前沿图（仅适用于多目标优化）
 if len(study.directions) > 1:
     pareto_fig = plot_pareto_front(study, **targets_args)
     pareto_fig.show() if in_notebook() else None
     pareto_fig.update_layout(width=800, height=600)
-    pareto_fig.write_image(f"{FIGS}/GANIT_optuna/pareto_fig.svg", format='svg', scale=2, width=800, height=600) if not in_notebook() else None
+    pareto_fig.write_image(f"{optuna_fig_path}/pareto_fig.svg", format='svg', scale=2, width=800, height=600) if not in_notebook() else None
 
 
 # %% [markdown]
