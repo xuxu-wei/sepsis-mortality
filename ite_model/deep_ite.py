@@ -128,6 +128,7 @@ study.optimize(objective, n_trials=100, callbacks=[trial_callback])
 
 # 保存实验结果
 with open(f"{MODELS}/GANIT_optuna_study.pkl", "wb") as f:
+    print('调参结束，正在保存optuna调参试验结果')
     pickle.dump(study, f)
 
 # 获取 Pareto 前沿解
@@ -165,13 +166,16 @@ best_model = GaniteRegressor(
 )
 
 # 训练最佳模型
+print('使用最佳参数在全集上模型')
 best_model.fit((X, W), y)
 
 # 保存最佳模型
+print('训练完成，保存模型参数')
 torch.save(best_model.state_dict(), f"{MODELS}/GANITE_best_weights_optuna.pth")
 
 # %%
 # 加载 study 对象
+print('重新加载 optuna study 并进行调参过程可视化')
 with open(f"{MODELS}/GANIT_optuna_study.pkl", "rb") as f:
     study = pickle.load(f)
 
