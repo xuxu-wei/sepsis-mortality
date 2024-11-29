@@ -119,12 +119,12 @@ def trial_callback(study, trial):
             print(f"Current best parameters: {study.best_params}")
             print(f"Current best trial: {study.best_trials}")
     else:
-        print(f"Trial {trial.number} finished with value: {trial.value} and parameters: {trial.params}")
+        print(f"Trial {trial.number}/{N_TRIAL} finished with value: {trial.value} and parameters: {trial.params}")
 
 
 # 使用 Optuna 优化
 study = optuna.create_study(directions=["maximize", "maximize", "maximize"])  # 或 "minimize"，取决于评分标准
-study.optimize(objective, n_trials=100, callbacks=[trial_callback])
+study.optimize(objective, n_trials=N_TRIAL, callbacks=[trial_callback])
 
 # 保存实验结果
 with open(f"{MODELS}/GANIT_optuna_study.pkl", "wb") as f:
