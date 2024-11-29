@@ -53,10 +53,11 @@ y = np.array(y)
 # %%
 def objective(trial):
     # 定义需要调优的超参数范围
-    dim_hidden = trial.suggest_categorical("dim_hidden", [50, 75, 100, 200, 300])
-    alpha = trial.suggest_float("alpha", 0.1, 1.0, step=0.05)
+    dim_hidden = trial.suggest_int("dim_hidden", 50, 500, step=10)
+    alpha = trial.suggest_float("alpha", 0.0, 2.0, step=0.05)
     beta = trial.suggest_float("beta", 0.0, 2.0, step=0.05)
     depth = trial.suggest_int("depth", 0, 5, step=1)
+    minibatch_size = trial.suggest_int("minibatch_size", 50, 400, step=10)
     num_iterations = trial.suggest_int("num_iterations", 1000, 2500, step=500)
     num_discr_iterations = trial.suggest_categorical("num_discr_iterations", [1, 2, 3])
 
@@ -68,6 +69,7 @@ def objective(trial):
         alpha=alpha,
         beta=beta,
         depth=depth,
+        minibatch_size=minibatch_size,
         num_iterations=num_iterations,
         num_discr_iterations=num_discr_iterations,
     )
@@ -100,7 +102,7 @@ def objective(trial):
     return np.mean(scores), np.mean(ate_losses_ob), np.mean(ate_losses)
 
 # 日志功能：设置 Optuna 的日志级别
-optuna.logging.set_verbosity(optuna.logging.INFO)
+# optuna.logging.set_verbosity(optuna.logging.INFO)
 
 # 实时打印当前最佳结果
 def trial_callback(study, trial):
@@ -120,8 +122,14 @@ def trial_callback(study, trial):
             print(f"Current best parameters: {study.best_params}")
             print(f"Current best trial: {study.best_trials}")
     else:
-        # 已开启日志，无需打印
-        pass
+        # 多目标优化时 打印首选 Pareto 前沿解的结果和参数
+        if len(study.directions) > 1:
+            pareto_front = study.best_trials
+            best_trial = pareto_front[0]
+            print(f"Trial {trial.number}/{N_TRIAL} finished with value: {trial.values} and parameters: {trial.params} | crrent best value: {best_trial.values} and parameters: {best_trial.params} | Number of Pareto optimal solutions: {len(pareto_front)}")
+        else:
+            print(f"Trial {trial.number}/{N_TRIAL} finished with value: {trial.value} and parameters: {trial.params} | crrent best value: {study.best_value} and parameters: {study.best_params}")
+
 
 # 使用 Optuna 优化
 study = optuna.create_study(directions=["maximize", "maximize", "maximize"])  # 或 "minimize"，取决于评分标准
