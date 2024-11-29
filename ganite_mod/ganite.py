@@ -221,7 +221,7 @@ class Ganite(nn.Module):
         binary_y: bool,
         dim_hidden: int = 100,
         alpha: float = 0.1,
-        beta: float = 0,
+        beta: float = 1.0,
         minibatch_size: int = 256,
         depth: int = 0,
         num_iterations: int = 5000,

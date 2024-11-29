@@ -202,15 +202,17 @@ target_args_1 = dict(target = lambda t: -t.values[0], target_name="Berier Score"
 target_args_2 = dict(target = lambda t: -t.values[1], target_name="ATE_observed L1-loss")
 target_args_3 = dict(target = lambda t: -t.values[1], target_name="ATE L1-loss")
 targets_args = dict(targets = lambda t: [-t.values[0], -t.values[1], -t.values[2]], target_names=["Berier Score", "ATE_observed L1-loss", "ATE L1-loss"])
+# targets_args = dict(targets = lambda t: [-t.values[0], -t.values[1]], target_names=["Berier Score", "ATE_observed L1-loss"])
 
 # 并行坐标图
 parallel_coordinate_fig = plot_parallel_coordinate(study, **target_args_1)
+parallel_coordinate_fig.update_layout(width=800, height=600)
 parallel_coordinate_fig.show() if in_notebook() else None
 parallel_coordinate_fig.write_image(f"{FIGS}/GANIT_optuna/parallel_coordinate_fig.svg", format='svg', scale=2, width=700, height=500) if not in_notebook() else None
 
 # 参数重要性图
 param_importance_fig = plot_param_importances(study, **target_args_1)
-param_importance_fig.update_layout(width=400, height=300)
+param_importance_fig.update_layout(width=800, height=600)
 param_importance_fig.show() if in_notebook() else None
 param_importance_fig.write_image(f"{FIGS}/GANIT_optuna/param_importance_fig.svg", format='svg', scale=2, width=700, height=500) if not in_notebook() else None
 
@@ -235,8 +237,8 @@ optimization_history_fig.write_image(f"{FIGS}/GANIT_optuna/optimization_history_
 if len(study.directions) > 1:
     pareto_fig = plot_pareto_front(study, **targets_args)
     pareto_fig.show() if in_notebook() else None
-    pareto_fig.update_layout(width=700, height=500)
-    pareto_fig.write_image(f"{FIGS}/GANIT_optuna/pareto_fig.svg", format='svg', scale=2, width=700, height=500) if not in_notebook() else None
+    pareto_fig.update_layout(width=800, height=600)
+    pareto_fig.write_image(f"{FIGS}/GANIT_optuna/pareto_fig.svg", format='svg', scale=2, width=800, height=600) if not in_notebook() else None
 
 
 # %% [markdown]
