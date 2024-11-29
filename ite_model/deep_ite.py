@@ -39,7 +39,7 @@ from ganite_mod import Ganite, GaniteRegressor
 from ganite_mod.utils.metrics import *
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print('current device: {DEVICE}')
+print(f'current device: {DEVICE}')
 
 # %%
 df = pd.read_csv(f'{DATA}/imputed/EXIT_SEP_clean_imputed.tsv.gz', sep='\t', index_col='ID')
