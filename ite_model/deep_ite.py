@@ -59,8 +59,8 @@ y = np.array(y)
 current_time = datetime.now()
 formatted_time = current_time.strftime("%Y-%m-%d_%H-%M")
 
-optuna_result_path = f'{MODELS}/GANIT_optuna-{current_outcome}-{formatted_time}-{sys.platform}/'
-optuna_fig_path = f'{FIGS}/GANIT_optuna-{current_outcome}-{formatted_time}-{sys.platform}/'
+optuna_result_path = f'{MODELS}/GANITE_optuna-{current_outcome}-{formatted_time}-{sys.platform}/'
+optuna_fig_path = f'{FIGS}/GANITE_optuna-{current_outcome}-{formatted_time}-{sys.platform}/'
 
 os.makedirs(optuna_fig_path, exist_ok=True)
 os.makedirs(optuna_result_path, exist_ok=True)
