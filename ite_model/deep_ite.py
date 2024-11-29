@@ -101,6 +101,7 @@ def objective(trial):
 
 # 日志功能：设置 Optuna 的日志级别
 optuna.logging.set_verbosity(optuna.logging.INFO)
+
 # 实时打印当前最佳结果
 def trial_callback(study, trial):
     if in_notebook():
@@ -119,8 +120,8 @@ def trial_callback(study, trial):
             print(f"Current best parameters: {study.best_params}")
             print(f"Current best trial: {study.best_trials}")
     else:
-        print(f"Trial {trial.number}/{N_TRIAL} finished with value: {trial.value} and parameters: {trial.params}")
-
+        # 已开启日志，无需打印
+        pass
 
 # 使用 Optuna 优化
 study = optuna.create_study(directions=["maximize", "maximize", "maximize"])  # 或 "minimize"，取决于评分标准
