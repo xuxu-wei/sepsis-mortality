@@ -1,5 +1,6 @@
 # %%
 import os, sys
+import argparse
 import pandas as pd
 import torch
 import optuna
@@ -16,8 +17,14 @@ if in_notebook():
     notebook_dir = os.getcwd()
     src_path = os.path.abspath(os.path.join(notebook_dir, '..'))
     RUN_MODE = 'eval'
+    N_TRIAL = 50
 else:
     src_path = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
+    parser = argparse.ArgumentParser(description='')
+    parser.add_argument('-n',metavar= 50, type=int, default=50,help='''optuna优化尝试次数''')
+    sys_args = parser.parse_args()
+    N_TRIAL = sys_args.n
+
 sys.path.append(src_path) if src_path not in sys.path else None
 
 from src.utils import *
