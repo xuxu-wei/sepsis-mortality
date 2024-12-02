@@ -6,14 +6,10 @@ import psutil
 if not sys.platform.startswith('win'):
     import resource
 
+# 检测运行环境
 def in_notebook():
-    try:
-        from IPython import get_ipython
-        if 'IPKernelApp' not in get_ipython().config:
-            return False
-        return True
-    except:
-        return False
+    return 'IPKernelApp' in getattr(globals().get('get_ipython', lambda: None)(), 'config', {})
+
 
 def show_dataframe(data):
     if in_notebook():

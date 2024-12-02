@@ -48,8 +48,8 @@ data_file_dict = {
     'EXIT_SEP':'EXIT_SEP_clean.tsv.gz',
     'EXIT_SEP_worst_both':'EXIT_SEP_worse_case_both_die.tsv.gz',
     'EXIT_SEP_worst_xbj':'EXIT_SEP_worse_case_xbj_die.tsv.gz',
-    'eICU':'eICU.tsv.gz',
-    'MIMIC_IV':'MIMIC_IV.tsv.gz',
+    'eICU':'eICU_clean.tsv.gz',
+    'MIMIC_IV':'MIMIC_IV_clean.tsv.gz',
 }
 data_file = data_file_dict[DATASET]
 fname = data_file.split('.')[0]
@@ -82,7 +82,8 @@ def infer_lower(x: pd.Series, cate_vars: List[str], cont_vars: List[str]):
         return x.min()
     # 若为连续变量，下界为左侧2.5% - IQR
     if x.name in cont_vars:
-        return x.quantile(0.025) - 2*(x.quantile(0.75)-x.quantile(0.25))
+        # return x.quantile(0.025) - (x.quantile(0.75)-x.quantile(0.25))
+        return x.min()
     else:
         return x.min()
 
@@ -102,9 +103,10 @@ def infer_upper(x: pd.Series, cate_vars: List[str], cont_vars: List[str]):
     # 若为分类变量，直接使用最大值
     if x.name in cate_vars:
         return x.max()
-    # 若为连续变量，上界为右侧97.5% +2倍四分位距
+    # 若为连续变量，上界为右侧97.5% + IQR
     if x.name in cont_vars:
-        return x.quantile(0.975) + 2*(x.quantile(0.75)-x.quantile(0.25))
+        # return x.quantile(0.975) + (x.quantile(0.75)-x.quantile(0.25))
+        return x.max()
     else:
         return x.max()
 
@@ -178,6 +180,7 @@ else:
     print('执行 连续变量填补...')
     X = cont_imputer.fit_transform(df_impute_model) # 利用整个数据集
     df_cont_imputed = pd.DataFrame(X, index=df_impute_model.index, columns=df_impute_model.columns)
+    pickle.dump(cont_imputer, open(f'{MODELS}/{DATASET}_cont_imputer.pkl', "wb"))
     for var in cont_vars:
         df[var] = df_cont_imputed[var] # 将填补后的连续变量赋值给原始数据
         df_impute_model[var] = df_cont_imputed[var]  # 将填补后的连续变量赋值给建模数据 继续用于分类变量填补
@@ -195,6 +198,7 @@ else:
     X = cate_imputer.fit_transform(df_impute_model)
     print('填补完成')
     df_all_imputed = pd.DataFrame(X, index=df_impute_model.index, columns=df_impute_model.columns)
+    pickle.dump(cate_imputer, open(f'{MODELS}/{DATASET}_cate_imputer.pkl', "wb"))
     for var in cate_vars:
         df[var] = df_all_imputed[var]
     # 打印填补信息

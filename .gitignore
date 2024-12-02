@@ -5,6 +5,7 @@ private_*
 data/
 temp/
 log/
+private/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

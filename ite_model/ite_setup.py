@@ -41,7 +41,7 @@ ite_var_dict = {
 "multidrug_resist":"category",
 "temperature":"continuous",
 "heart_rate":"continuous",
-"breath_rate":"continuous",
+"respiratory_rate":"continuous",
 "SBP":"continuous",
 "DBP":"continuous",
 "SOFA_respiration":"category",
