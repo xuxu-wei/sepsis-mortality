@@ -131,12 +131,12 @@ def print_missing_info(data: pd.DataFrame, cate_vars: List[str], cont_vars: List
 print(f'缺失填补前')
 print_missing_info(df, cate_vars, cont_vars)
 
-# 排除主要结局缺失的数据
+# 排除主要结局缺失的数据，次要结局如果发生缺失，则等到建模时排除
 mask_primary_outcome = df[outcomes[0]].notna()
 df = df[mask_primary_outcome].copy()
+df_impute_model = df.drop(columns=outcomes) # exclude Y to prevent data leakage
 gc.collect()
 
-df_impute_model = df.drop(columns=outcomes) # exclude Y to prevent data leakage
 imput_lower = df_impute_model.agg(lambda x: infer_lower(x, cate_vars, cont_vars))
 imput_upper = df_impute_model.agg(lambda x: infer_upper(x, cate_vars, cont_vars))
 
