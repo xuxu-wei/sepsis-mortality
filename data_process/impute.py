@@ -59,11 +59,6 @@ print(f'output file: {os.path.realpath(imputation_output)}')
 df = pd.read_csv(f'{DATA}/{data_file}', sep='\t', index_col='ID')
 cate_vars, cont_vars, outcomes = get_cleaned_vars(DATASET)
 
-# 排除主要结局缺失的数据
-mask_primary_outcome = df[outcomes[0]].notna()
-df = df[mask_primary_outcome].copy()
-gc.collect()
-
 # 规定缺失填充的下界
 def infer_lower(x: pd.Series, cate_vars: List[str], cont_vars: List[str]):
     """
@@ -136,7 +131,12 @@ def print_missing_info(data: pd.DataFrame, cate_vars: List[str], cont_vars: List
 print(f'缺失填补前')
 print_missing_info(df, cate_vars, cont_vars)
 
-df_impute_model = df.copy()
+# 排除主要结局缺失的数据
+mask_primary_outcome = df[outcomes[0]].notna()
+df = df[mask_primary_outcome].copy()
+gc.collect()
+
+df_impute_model = df.drop(columns=outcomes) # exclude Y to prevent data leakage
 imput_lower = df_impute_model.agg(lambda x: infer_lower(x, cate_vars, cont_vars))
 imput_upper = df_impute_model.agg(lambda x: infer_upper(x, cate_vars, cont_vars))
 
@@ -148,8 +148,8 @@ cont_imputer = IterativeImputer(
     initial_strategy='median', # 连续变量采用中位数初始化，其他参数设置与分类变量相同
     imputation_order='ascending', # 从缺失最少的变量开始填补
     n_nearest_features=None, # 使用所有可用变量
-    max_iter=200,
-    tol=0.001,
+    max_iter=300,
+    tol=0.02,
     verbose=2,
     add_indicator=False,
     random_state=19960816,
@@ -162,8 +162,8 @@ cate_imputer = IterativeImputer(
     initial_strategy='most_frequent', # 连续变量采用中位数初始化，其他参数设置与分类变量相同
     imputation_order='ascending', # 从缺失最少的变量开始填补
     n_nearest_features=None, # 使用所有可用变量
-    max_iter=200,
-    tol=0.001,
+    max_iter=300,
+    tol=0.02,
     verbose=2,
     add_indicator=False,
     random_state=19960816,
@@ -184,7 +184,7 @@ else:
     for var in cont_vars:
         df[var] = df_cont_imputed[var] # 将填补后的连续变量赋值给原始数据
         df_impute_model[var] = df_cont_imputed[var]  # 将填补后的连续变量赋值给建模数据 继续用于分类变量填补
-    # # 打印填补信息
+    # 打印填补信息
     print(f'填补变量：{len(cont_imputer.feature_names_in_)}个\n',cont_imputer.feature_names_in_)
     print_missing_info(df, cate_vars, cont_vars)
     del df_cont_imputed, cont_imputer

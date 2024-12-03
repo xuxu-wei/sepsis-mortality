@@ -99,10 +99,10 @@ def get_cleaned_vars(dataset='EXIT_SEP'):
         "7d_septic_shock":"category",
         }
         outcomes = ['28d_mortality', 'in_hospital_mortality', '7d_septic_shock']
-        cate_vars = [var for var in var_dict if (var_dict[var]=='category') and ( var != outcomes[0]) ]
-        cont_vars = [var for var in var_dict if (var_dict[var]=='continuous') and ( var != outcomes[0]) ]
+        cate_vars = [var for var in var_dict if (var_dict[var]=='category') and ( var != outcomes[0])]
+        cont_vars = [var for var in var_dict if (var_dict[var]=='continuous') and ( var != outcomes[0])]
 
-    if dataset.startswith('MIMIC_IV'):
+    elif dataset.startswith('MIMIC_IV'):
         var_dict = {
         "age":'continuous',
         "sex":'category',
@@ -133,7 +133,7 @@ def get_cleaned_vars(dataset='EXIT_SEP'):
         "SOFA_cns":'category',
         "SOFA_renal":'category',
         "SOFA":'category',
-        'GCS':'category',
+        'GCS':'continuous',
 
         'APS_III':'continuous',
         'SIRS':'continuous',
