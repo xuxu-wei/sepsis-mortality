@@ -181,6 +181,7 @@ else:
     X = cont_imputer.fit_transform(df_impute_model) # 利用整个数据集
     df_cont_imputed = pd.DataFrame(X, index=df_impute_model.index, columns=df_impute_model.columns)
     pickle.dump(cont_imputer, open(f'{MODELS}/{DATASET}_cont_imputer.pkl', "wb"))
+    print(f'保存连续变量缺失填补器')
     for var in cont_vars:
         df[var] = df_cont_imputed[var] # 将填补后的连续变量赋值给原始数据
         df_impute_model[var] = df_cont_imputed[var]  # 将填补后的连续变量赋值给建模数据 继续用于分类变量填补
@@ -199,6 +200,7 @@ else:
     print('填补完成')
     df_all_imputed = pd.DataFrame(X, index=df_impute_model.index, columns=df_impute_model.columns)
     pickle.dump(cate_imputer, open(f'{MODELS}/{DATASET}_cate_imputer.pkl', "wb"))
+    print(f'保存分类变量缺失填补器')
     for var in cate_vars:
         df[var] = df_all_imputed[var]
     # 打印填补信息
