@@ -34,7 +34,8 @@ class BorutaShap:
     """
 
     def __init__(self, model=None, importance_measure='Shap',
-                classification=True, percentile=100, pvalue=0.05):
+                 classification=True, percentile=100, pvalue=0.05,
+                 correction_method='bonferroni'):
 
         """
         Parameters
@@ -43,13 +44,13 @@ class BorutaShap:
             If no model specified then a base Random Forest will be returned otherwise the specifed model will
             be returned.
 
-        importance_measure: String
+        importance_measure: str
             Which importance measure too use either Shap or Gini/Gain
 
-        classification: Boolean
+        classification: bool
             if true then the problem is either a binary or multiclass problem otherwise if false then it is regression
 
-        percentile: Int
+        percentile: int
             An integer ranging from 0-100 it changes the value of the max shadow importance values. Thus, lowering its value
             would make the algorithm more lenient.
 
@@ -57,7 +58,10 @@ class BorutaShap:
             A float used as a significance level again if the p-value is increased the algorithm will be more lenient making it smaller
             would make it more strict also by making the model more strict could impact runtime making it slower. As it will be less likley
             to reject and accept features.
-
+        
+        correction_method : str
+            Method for multiple comparisons correction (default: 'bonferroni').
+            Options include 'bonferroni', 'holm', 'fdr_bh', etc.
         """
 
         self.importance_measure = importance_measure
@@ -65,6 +69,7 @@ class BorutaShap:
         self.pvalue = pvalue
         self.classification = classification
         self.model = model
+        self.correction_method = correction_method 
         self.check_model()
 
     @classmethod
@@ -927,23 +932,53 @@ class BorutaShap:
         return list(filter(lambda x: array[x], range(length)))
 
 
+    # @staticmethod
+    # def bonferoni_corrections(pvals, alpha=0.05, n_tests=None):
+    #     """
+    #     used to counteract the problem of multiple comparisons.
+    #     """
+    #     pvals = np.array(pvals)
+
+    #     if n_tests is None:
+    #         n_tests = len(pvals)
+    #     else:
+    #         pass
+
+    #     alphacBon = alpha / float(n_tests)
+    #     reject = pvals <= alphacBon
+    #     pvals_corrected = pvals * float(n_tests)
+    #     return reject, pvals_corrected
+
+
     @staticmethod
-    def bonferoni_corrections(pvals, alpha=0.05, n_tests=None):
+    def multiple_comparisons_correction(pvals, alpha=0.05, method='bonferroni'):
         """
-        used to counteract the problem of multiple comparisons.
+        Perform multiple comparisons correction on p-values.
+
+        Parameters
+        ----------
+        pvals : array-like
+            Array of p-values to correct.
+        alpha : float, optional (default=0.05)
+            The desired significance level.
+        method : str, optional (default='bonferroni')
+            The correction method to use. Options include:
+            - 'bonferroni': Bonferroni correction
+            - 'holm': Holm-Bonferroni method
+            - 'fdr_bh': Benjamini-Hochberg FDR correction
+            - 'fdr_by': Benjamini-Yekutieli FDR correction
+            - See `statsmodels.stats.multitest.multipletests` for more options.
+
+        Returns
+        -------
+        reject : ndarray
+            Boolean array indicating whether each hypothesis is rejected.
+        corrected_pvals : ndarray
+            Corrected p-values.
         """
         pvals = np.array(pvals)
-
-        if n_tests is None:
-            n_tests = len(pvals)
-        else:
-            pass
-
-        alphacBon = alpha / float(n_tests)
-        reject = pvals <= alphacBon
-        pvals_corrected = pvals * float(n_tests)
-        return reject, pvals_corrected
-
+        reject, corrected_pvals, _, _ = multipletests(pvals, alpha=alpha, method=method)
+        return reject, corrected_pvals
 
     def test_features(self, iteration):
         """
@@ -958,12 +993,8 @@ class BorutaShap:
         )
 
         # Apply Bonferroni correction
-        corrected_acceptance_p_values = self.bonferoni_corrections(
-            acceptance_p_values, alpha=0.05, n_tests=len(self.columns)
-        )[1]
-        corrected_reject_p_values = self.bonferoni_corrections(
-            reject_p_values, alpha=0.05, n_tests=len(self.columns)
-        )[1]
+        corrected_acceptance_p_values = self.multiple_comparisons_correction(acceptance_p_values, alpha=0.05)[1]
+        corrected_reject_p_values = self.multiple_comparisons_correction(reject_p_values, alpha=0.05)[1]
 
         # Store raw and corrected p-values for each feature
         self.p_values = {
