@@ -1,7 +1,30 @@
-'''
+"""
 This is a modified implementation of BorutaShap v1.0.17.
-see original repo https://github.com/Ekeany/Boruta-Shap
-'''
+
+Original repository:
+--------------------
+URL: https://github.com/Ekeany/Boruta-Shap
+License: MIT
+
+Purpose of the modification:
+----------------------------
+This implementation has been modified to enhance the flexibility and usability of the original BorutaShap package.
+Key modifications include:
+
+1. **Support for customizable multiple comparisons correction methods**:
+   - Users can now select from various correction methods (e.g., 'bonferroni', 'fdr_bh', etc.) for hypothesis testing, 
+     leveraging `statsmodels.stats.multitest.multipletests`.
+   - Introduced a `correction_method` parameter in the `BorutaShap` class to allow this customization.
+
+2. **Enhanced result transparency**:
+   - All features (including early-stopped features) now display their raw and corrected p-values in the output results.
+   - Improved handling of tentative features with clearer decision-making rules.
+
+3. **Extended feature importance output**:
+   - The output includes additional statistical details such as average importance, standard deviation, and decision status for each feature.
+
+"""
+
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, IsolationForest
 from sklearn.datasets import load_breast_cancer, load_diabetes
 from statsmodels.stats.multitest import multipletests
@@ -21,6 +44,8 @@ import seaborn as sns
 import shap
 import os
 import re
+from collections import defaultdict
+import inspect
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -759,7 +784,7 @@ class BorutaShap:
             
             # set default scoring as f1, can be changed to an argument for customizability
             perm_importances_ =  permutation_importance(self.model, self.X, self.y, scoring='f1')
-            perm_importances_ = perm_importance.importances_mean
+            # perm_importances_ = perm_importance.importances_mean
 
             if normalize:
                 perm_importances_ = self.calculate_Zscore(perm_importances_)
