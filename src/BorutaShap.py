@@ -946,40 +946,26 @@ class BorutaShap:
 
 
     def test_features(self, iteration):
-
         """
-        For each feature with an undetermined importance perform a two-sided test of equality
-        with the maximum shadow value to determine if it is statistcally better
-
-        Parameters
-        ----------
-        hits: an array which holds the history of the number times
-              this feature was better than the maximum shadow
-
-        Returns:
-            Two arrays of the names of the accepted and rejected columns at that instance
+        Ensure p-values are computed and stored for all features, regardless of their status.
         """
+        # Compute raw p-values for acceptance and rejection tests
+        acceptance_p_values = self.binomial_H0_test(
+            self.hits, n=iteration, p=0.5, alternative="greater"
+        )
+        reject_p_values = self.binomial_H0_test(
+            self.hits, n=iteration, p=0.5, alternative="less"
+        )
 
-        acceptance_p_values = self.binomial_H0_test(self.hits,
-                                                    n=iteration,
-                                                    p=0.5,
-                                                    alternative='greater')
+        # Apply Bonferroni correction
+        corrected_acceptance_p_values = self.bonferoni_corrections(
+            acceptance_p_values, alpha=0.05, n_tests=len(self.columns)
+        )[1]
+        corrected_reject_p_values = self.bonferoni_corrections(
+            reject_p_values, alpha=0.05, n_tests=len(self.columns)
+        )[1]
 
-        reject_p_values = self.binomial_H0_test(self.hits,
-                                                n=iteration,
-                                                p=0.5,
-                                                alternative='less')
-
-        # [1] as function returns a tuple
-        corrected_acceptance_p_values = self.bonferoni_corrections(acceptance_p_values,
-                                                                  alpha=0.05,
-                                                                  n_tests=len(self.columns))[1]
-
-        corrected_reject_p_values = self.bonferoni_corrections(reject_p_values,
-                                                              alpha=0.05,
-                                                              n_tests=len(self.columns))[1]
-
-        # Store raw and corrected p-values in a dictionary
+        # Store raw and corrected p-values for each feature
         self.p_values = {
             col: {
                 "raw_acceptance_p": raw_accept,
@@ -995,55 +981,36 @@ class BorutaShap:
                 corrected_reject_p_values,
             )
         }
-        
-        # Take the inverse as we want true to keep featrues
-        # rejected_columns = np.array(corrected_reject_p_values) < self.pvalue
-        # accepted_columns = np.array(corrected_acceptance_p_values) < self.pvalue
 
-        # rejected_indices = self.find_index_of_true_in_array(rejected_columns)
-        # accepted_indices = self.find_index_of_true_in_array(accepted_columns)
+        # Ensure p-values are recorded for all features, even if already accepted or rejected
+        for col in self.all_columns:
+            if col not in self.p_values:
+                self.p_values[col] = {
+                    "raw_acceptance_p": np.nan,
+                    "corrected_acceptance_p": np.nan,
+                    "raw_reject_p": np.nan,
+                    "corrected_reject_p": np.nan,
+                }
 
-        # rejected_features = self.all_columns[rejected_indices]
-        # accepted_features = self.all_columns[accepted_indices]
-
-
-        # self.features_to_remove = rejected_features
-
-
-        # self.rejected_columns.append(rejected_features)
-        # self.accepted_columns.append(accepted_features)
-
-        #! modified rules
-        # Initialize lists for accepted, rejected, and tentative features
+        # Update accepted, rejected, and tentative lists
         accepted_features = []
         rejected_features = []
         tentative_features = []
 
-        # Evaluate each feature based on its p-values
         for col, corrected_accept, corrected_reject in zip(
             self.columns, corrected_acceptance_p_values, corrected_reject_p_values
         ):
             if corrected_accept < self.pvalue and corrected_reject > self.pvalue:
-                # Feature is accepted
                 accepted_features.append(col)
             elif corrected_reject < self.pvalue and corrected_accept > self.pvalue:
-                # Feature is rejected
                 rejected_features.append(col)
-            elif corrected_accept < self.pvalue and corrected_reject < self.pvalue:
-                # Ambiguous case: satisfies both accept and reject
-                print(
-                    f"Warning: Feature {col} satisfies both accept and reject conditions. Marking as tentative."
-                )
-                tentative_features.append(col)
             else:
-                # Feature remains tentative
                 tentative_features.append(col)
 
-        # Update feature lists
-        self.features_to_remove = rejected_features
-        self.rejected_columns.append(rejected_features)
         self.accepted_columns.append(accepted_features)
-        self.tentative_columns = tentative_features  # New attribute for tentative features
+        self.rejected_columns.append(rejected_features)
+        self.tentative_columns = tentative_features
+
 
     def TentativeRoughFix(self):
 
