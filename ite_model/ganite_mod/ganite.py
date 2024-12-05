@@ -10,7 +10,7 @@ from ganite_mod.utils.random import enable_reproducible_results
 from ganite_mod.utils.metrics import RCT_ATE_l1_loss
 from torch import nn
 from sklearn.base import BaseEstimator, RegressorMixin
-from sklearn.metrics import mean_squared_error
+from sklearn.metrics import mean_squared_error, roc_auc_score
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 EPS = 1e-10
@@ -665,6 +665,40 @@ class GaniteRegressor(Ganite, BaseEstimator, RegressorMixin):
         # Calculate and return the negative mean squared error
         return -mean_squared_error(y, y_pred)
 
+    def roc_auc(self, X, y, *args, **kwargs):
+        """
+        Returns the ROC-AUC score for the model's ability to distinguish treatment groups.
+
+        Parameters
+        ----------
+        X : tuple of (features, treatment)
+            - `X[0]`: Feature matrix of shape (n_samples, n_features).
+            - `X[1]`: Treatment assignment vector of shape (n_samples,).
+        y : np.ndarray or torch.Tensor
+            Observed outcomes vector of shape (n_samples,).
+
+        Returns
+        -------
+        float
+            ROC-AUC score evaluating the model's classification performance.
+        """
+        
+        X_features, treatment = X
+        treatment = treatment.cpu().numpy() if isinstance(treatment, torch.Tensor) else treatment
+        y = y.cpu().numpy() if isinstance(y, torch.Tensor) else y
+
+        # Predict potential outcomes
+        hat_y1, hat_y0, _ = self.predict(X_features)  # hat_y1, hat_y0 are numpy arrays
+
+        # Select predictions based on treatment
+        y_pred = np.where(treatment == 1, hat_y1, hat_y0)  # Choose hat_y1 if treated, else hat_y0
+
+        # Ensure y and y_pred are numpy arrays for compatibility with sklearn.metrics
+        y_pred = y_pred if isinstance(y_pred, np.ndarray) else y_pred.cpu().numpy()
+
+        # Calculate and return the roc_auc
+        return roc_auc_score(y, y_pred)
+    
     def ate_l1_loss(self, X, y, eval_strategy='mean_ITE'):
         """
         Returns the negative mean squared error of the model on the given data.

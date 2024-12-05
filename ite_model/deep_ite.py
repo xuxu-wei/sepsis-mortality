@@ -17,8 +17,8 @@ if in_notebook():
     from IPython.display import clear_output, display
     notebook_dir = os.getcwd()
     src_path = os.path.abspath(os.path.join(notebook_dir, '..'))
-    RUN_MODE = 'reload' # reload: 重现study; tuning 搜索超参数
-    N_TRIAL = 50
+    RUN_MODE = 'tuning' # reload: 重现study; tuning 搜索超参数
+    N_TRIAL = 3
     OUTCOME_IX = 0
 else:
     src_path = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
@@ -96,6 +96,7 @@ if RUN_MODE=='tuning':
 
         # 实现交叉验证
         kf = KFold(n_splits=10, shuffle=True, random_state=19960816)
+        aucs = []
         scores = []
         ate_losses_ob = []
         ate_losses = []
@@ -113,13 +114,15 @@ if RUN_MODE=='tuning':
             score_temp = model.score((X_val, T_val), y_val)  # 默认负均方误差
             neg_ate_l1_loss_ob_temp = model.ate_l1_loss((X_val, T_val), y_val, eval_strategy='observed_only')  # 负 ATE 误差, 仅比较观测组间误差
             neg_ate_l1_loss_temp = model.ate_l1_loss((X_val, T_val), y_val, eval_strategy='mean_ITE')  # 负 ATE 误差
-            
+            auc = model.roc_auc((X_val, T_val), y_val, average='weighted')
+
+            aucs.append(auc)
             scores.append(score_temp)
             ate_losses_ob.append(neg_ate_l1_loss_ob_temp)
             ate_losses.append(neg_ate_l1_loss_temp)
 
         # 返回平均交叉验证分数（负均方误差）
-        return np.mean(scores), np.mean(ate_losses_ob), np.mean(ate_losses)
+        return np.mean(aucs), np.mean(scores), np.mean(ate_losses_ob), np.mean(ate_losses)
 
     # 日志功能：设置 Optuna 的日志级别
     # optuna.logging.set_verbosity(optuna.logging.INFO)
@@ -152,7 +155,7 @@ if RUN_MODE=='tuning':
 
 
     # 使用 Optuna 优化
-    study = optuna.create_study(directions=["maximize", "maximize", "maximize"])  # 或 "minimize"，取决于评分标准
+    study = optuna.create_study(directions=["maximize", "maximize", "maximize", "maximize",])  # 或 "minimize"，取决于评分标准
     study.optimize(objective, n_trials=N_TRIAL, callbacks=[trial_callback])
 
     # 保存实验结果
@@ -219,11 +222,11 @@ from optuna.visualization import (
 )
 
 # 绘制不同的图表
-target_args_1 = dict(target = lambda t: -t.values[0], target_name="Berier Score")
-target_args_2 = dict(target = lambda t: -t.values[1], target_name="ATE_observed L1-loss")
-target_args_3 = dict(target = lambda t: -t.values[1], target_name="ATE L1-loss")
-targets_args = dict(targets = lambda t: [-t.values[0], -t.values[1], -t.values[2]], target_names=["Berier Score", "ATE_observed L1-loss", "ATE L1-loss"])
-# targets_args = dict(targets = lambda t: [-t.values[0], -t.values[1]], target_names=["Berier Score", "ATE_observed L1-loss"])
+target_args_1 = dict(target = lambda t: -t.values[0], target_name="AUC")
+target_args_2 = dict(target = lambda t: -t.values[1], target_name="Berier Score")
+target_args_3 = dict(target = lambda t: -t.values[2], target_name="ATE_observed L1-loss")
+target_args_4 = dict(target = lambda t: -t.values[3], target_name="ATE L1-loss")
+targets_args = dict(targets = lambda t: [t.values[0], -t.values[1], -t.values[2], -t.values[3]], target_names=["AUC", "Berier Score", "ATE_observed L1-loss", "ATE L1-loss"])
 
 # 并行坐标图
 parallel_coordinate_fig = plot_parallel_coordinate(study, **target_args_1)
