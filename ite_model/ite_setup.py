@@ -95,7 +95,7 @@ ite_var_dict = {
 "PaCO2":"continuous",
 # "HCO3-":"continuous",
 
-"7d_septic_shock":"category",
-"in_hospital_mortality":"category",
 "28d_mortality":"category",
+"in_hospital_mortality":"category",
+"7d_septic_shock":"category",
 }

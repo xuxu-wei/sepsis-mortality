@@ -48,7 +48,7 @@ def get_cleaned_vars(dataset='EXIT_SEP'):
         "multidrug_resist":"category",
         "temperature":"continuous",
         "heart_rate":"continuous",
-        "respiratory_rate":"continuous",
+        "respir_rate":"continuous",
         "SBP":"continuous",
         "DBP":"continuous",
         "SOFA_respiration":"category", # PaO2/FiO2
