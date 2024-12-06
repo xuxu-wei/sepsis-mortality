@@ -1,4 +1,3 @@
-
 def load_data(data, outcome_ix=0):
     features, _, _, treatment, outcomes = get_ite_features()
     X = data[features].copy() # 患者特征
@@ -45,7 +44,7 @@ ite_var_dict = {
 
 "temperature":"continuous",
 "heart_rate":"continuous",
-"respiratory_rate":"continuous",
+"respir_rate":"continuous",
 # "SBP":"continuous",
 # "DBP":"continuous",
 "MAP":"continuous",
