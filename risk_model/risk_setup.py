@@ -25,6 +25,7 @@ def get_risk_model_vars(dataset='EXIT_SEP'):
         "primary_infection_site_uri":"category",
         "primary_infection_site_skin":"category",
         "primary_infection_site_brain":"category",
+        "primary_infection_site_blood":"category",
         "pathogen_test":"category",
         "Gram-_infect":"category",
         "Gram+_infect":"category",
