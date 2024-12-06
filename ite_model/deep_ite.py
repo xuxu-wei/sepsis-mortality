@@ -73,10 +73,10 @@ if RUN_MODE=='tuning':
 
     def objective(trial):
         # 定义需要调优的超参数范围
-        dim_hidden = trial.suggest_int("dim_hidden", 100, 300, step=10)
-        alpha = trial.suggest_float("alpha", 0.0, 5.0, step=0.05)
-        beta = trial.suggest_float("beta", 0.0, 5.0, step=0.05)
-        depth = trial.suggest_int("depth", 2, 5, step=1)
+        dim_hidden = trial.suggest_int("dim_hidden", 70, 400, step=10)
+        alpha = trial.suggest_float("alpha", 0.0, 3.0, step=0.05)
+        beta = trial.suggest_float("beta", 0.0, 3.0, step=0.05)
+        depth = trial.suggest_int("depth", 1, 5, step=1)
         minibatch_size = trial.suggest_categorical("minibatch_size", [200, 300, 400])
         num_iterations = trial.suggest_int("num_iterations", 1000, 2500, step=500)
         num_discr_iterations = trial.suggest_categorical("num_discr_iterations", [1, 2, 3])
