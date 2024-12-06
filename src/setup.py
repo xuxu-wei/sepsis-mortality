@@ -23,6 +23,8 @@ for workdir in [ROOT, DATA, FIGS, TABLES, MODELS]:
         os.makedirs(workdir)
         print(f'work directory set up: {workdir}')
 
+# Variables selected for imputation.
+# defined outcome variables should be excluded to prevent potential data leakage during imputation.
 def get_cleaned_vars(dataset='EXIT_SEP'):
     if dataset.startswith('EXIT_SEP'):
         var_dict = {
@@ -118,15 +120,15 @@ def get_cleaned_vars(dataset='EXIT_SEP'):
         "MAP":'continuous',
         "SPO2":'continuous',
         "cancer":'category',
-        # "liver_cirrhosis":'category',
-        # "chronic_heart_failure":'category',
-        "metastatic_cancer":'category',
+        "liver_cirrhosis":'category',
         # "leukemia":'category',
         # "lymphoma":'category',
         # "myeloma":'category',
         "hematologic_cancer":'category',
         "AIDS":'category',
-        
+        "chronic_heart_failure":'category',
+        "metastatic_cancer":'category',
+
         "SOFA_respiration":'category',
         "SOFA_coagulation":'category',
         "SOFA_liver":'category',
@@ -164,18 +166,18 @@ def get_cleaned_vars(dataset='EXIT_SEP'):
         "K+":'continuous',
         "Na+":'continuous',
         "Ca2+":'continuous',
-        # "Cl-":'continuous',
+        "Cl-":'continuous',
         "Fg":'continuous',
         "PT":'continuous',
         "APTT":'continuous',
         # "D-Dimer":'continuous',
         # "CRP":'continuous',
         "PH":'continuous',
-        "PaO2/FiO2":'continuous',
-        "HCO3-":'continuous',
         "PaO2":'continuous',
-        "Lac":'continuous',
+        "PaO2/FiO2":'continuous',
         "PaCO2":'continuous',
+        "HCO3-":'continuous',
+        "Lac":'continuous',
         "in_hospital_mortality":'category',
         "28d_mortality":'category',
         }
@@ -183,6 +185,62 @@ def get_cleaned_vars(dataset='EXIT_SEP'):
         cate_vars = [var for var in var_dict if (var_dict[var]=='category') and ( not var in outcomes) ]
         cont_vars = [var for var in var_dict if (var_dict[var]=='continuous') and ( not var in outcomes) ]
 
+    elif dataset.startswith('eICU'):
+        var_dict = {
+        "age":'continuous',
+        "sex":'category',
+        "weight":'continuous',
+        "height":'continuous',
+        "BMI":'continuous',
+        "temperature":'continuous',
+        "heart_rate":'continuous',
+        "respir_rate":'continuous',
+        "SBP":'continuous',
+        "DBP":'continuous',
+        "MAP":'continuous',
+        "SPO2":'continuous',
+        "cancer":'category',
+        "metastatic_cancer":'category',
+        "hematologic_cancer":'category',
+        "AIDS":'category',
+        "liver_cirrhosis":'category',
+        "chronic_heart_failure":'category',
+
+        'GCS':'continuous',
+        'APS_III':'continuous',
+        'APACHE_IV':'continuous',
+
+        "RBC":'continuous',
+        "WBC":'continuous',
+        "Hb":'continuous',
+        "NE%":'continuous',
+        "LYM%":'continuous',
+        "PLT":'continuous',
+        "HCT":'continuous',
+        "ALT":'continuous',
+        "AST":'continuous',
+        "STB":'continuous',
+        "BUN":'continuous',
+        "Scr":'continuous',
+        "Glu":'continuous',
+        "K+":'continuous',
+        "Na+":'continuous',
+        "Cl-":'continuous',
+        "Fg":'continuous',
+        "PT_INR":'continuous',
+        "APTT":'continuous',
+        "PH":'continuous',
+        "PaO2":'continuous',
+        "FiO2":'continuous',
+        "PaO2/FiO2":'continuous',
+        "PaCO2":'continuous',
+        "HCO3-":'continuous',
+        "Lac":'continuous',
+        "in_hospital_mortality":'category',
+        }
+        outcomes = ['in_hospital_mortality']
+        cate_vars = [var for var in var_dict if (var_dict[var]=='category') and ( not var in outcomes) ]
+        cont_vars = [var for var in var_dict if (var_dict[var]=='continuous') and ( not var in outcomes) ]
     else:
         raise ValueError(f'unexpected dataset label {dataset}')
     
