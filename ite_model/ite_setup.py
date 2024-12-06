@@ -1,9 +1,9 @@
 
-def load_data(data):
+def load_data(data, outcome_ix=0):
     features, _, _, treatment, outcomes = get_ite_features()
     X = data[features].copy() # 患者特征
     W = data[treatment] # 治疗分配
-    y = data[outcomes[0]] # 主要结局指标 28d死亡率
+    y = data[outcomes[outcome_ix]] # 主要结局指标 28d死亡率
     return X, W, y 
 
 def get_ite_model_vars():

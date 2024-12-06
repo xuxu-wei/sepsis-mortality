@@ -19,7 +19,7 @@ if in_notebook():
     src_path = os.path.abspath(os.path.join(notebook_dir, '..'))
     RUN_MODE = 'tuning' # reload: 重现study; tuning 搜索超参数
     N_TRIAL = 3
-    OUTCOME_IX = 0
+    OUTCOME_IX = 1
 else:
     src_path = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
     parser = argparse.ArgumentParser(description='')
@@ -49,7 +49,7 @@ current_outcome = outcomes[OUTCOME_IX] # 设置预测目标
 
 df_train = df.sample(frac=0.7, random_state=19960816)
 df_test = df[~df.index.isin(df_train.index)].copy()
-X, W, y = load_data(df)
+X, W, y = load_data(df, outcome_ix=OUTCOME_IX)
 
 X = np.array(X)
 W = np.array(W)
