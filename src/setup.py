@@ -14,11 +14,10 @@ else:
     ROOT = f'/home/xuxu.wei/sepsis-reasearch/'
 
 DATA = f'{ROOT}/data/'
-FIGS = f'{ROOT}/figures/'
-TABLES = f'{ROOT}/tables/'
 MODELS = f'{ROOT}/models/'
+RESULTS = f'{ROOT}/results/'
 
-for workdir in [ROOT, DATA, FIGS, TABLES, MODELS]:
+for workdir in [ROOT, DATA, RESULTS, MODELS]:
     if not os.path.exists(workdir):
         os.makedirs(workdir)
         print(f'work directory set up: {workdir}')

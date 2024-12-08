@@ -65,7 +65,8 @@ if RUN_MODE=='tuning':
     formatted_time = current_time.strftime("%Y-%m-%d_%H-%M")
 
     optuna_result_path = f'{MODELS}/GANITE_optuna-{current_outcome}-{formatted_time}-{sys.platform}/'
-    optuna_fig_path = f'{FIGS}/GANITE_optuna-{current_outcome}-{formatted_time}-{sys.platform}/'
+    # optuna_fig_path = f'{FIGS}/GANITE_optuna-{current_outcome}-{formatted_time}-{sys.platform}/'
+    optuna_fig_path = optuna_result_path # 统一输出路径
 
     os.makedirs(optuna_fig_path, exist_ok=True)
     os.makedirs(optuna_result_path, exist_ok=True)
@@ -226,7 +227,7 @@ target_args_1 = dict(target = lambda t: -t.values[0], target_name="AUC")
 target_args_2 = dict(target = lambda t: -t.values[1], target_name="Berier Score")
 target_args_3 = dict(target = lambda t: -t.values[2], target_name="ATE_observed L1-loss")
 target_args_4 = dict(target = lambda t: -t.values[3], target_name="ATE L1-loss")
-targets_args = dict(targets = lambda t: [t.values[0], -t.values[1], -t.values[2], -t.values[3]], target_names=["AUC", "Berier Score", "ATE_observed L1-loss", "ATE L1-loss"])
+targets_args = dict(targets = lambda t: [t.values[0], -t.values[3]], target_names=["AUC", "ΔATE"])
 
 # 并行坐标图
 parallel_coordinate_fig = plot_parallel_coordinate(study, **target_args_1)

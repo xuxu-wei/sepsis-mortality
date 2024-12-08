@@ -560,6 +560,13 @@ class GaniteRegressor(Ganite, BaseEstimator, RegressorMixin):
             The fitted model.
         """
         X_features, treatment = X
+
+        # Record feature names if provided (e.g., pandas DataFrame)
+        if hasattr(X_features, "columns"):
+            self.feature_names_in_ = X_features.columns.tolist()
+        else:
+            self.feature_names_in_ = [f"x{i}" for i in range(X_features.shape[1])]
+
         return super().fit(X_features, treatment, y)
     
     def predict(self, X):
@@ -630,7 +637,24 @@ class GaniteRegressor(Ganite, BaseEstimator, RegressorMixin):
         for param, value in params.items():
             setattr(self, param, value)
         return self
-    
+
+    def get_feature_names_out(self):
+        """
+        Get input feature names used by the regressor.
+
+        Returns
+        -------
+        list of str
+            Feature names, if available. Otherwise, raises an error.
+        """
+        if hasattr(self, "feature_names_in_"):
+            return self.feature_names_in_
+        else:
+            raise AttributeError(
+                "The model has not been fitted with feature names. "
+                "Make sure to call `fit` with feature names explicitly provided."
+            )
+        
     def score(self, X, y):
         """
         Returns the negative mean squared error of the model on the given data.
