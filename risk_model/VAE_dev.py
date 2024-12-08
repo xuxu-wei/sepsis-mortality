@@ -30,16 +30,13 @@ if IN_NOTEBOOK:
     src_path = os.path.abspath(os.path.join(notebook_dir, '..'))
     RUN_MODE = 'tuning' # reload: 重现study; tuning 搜索超参数
     N_TRIAL = 3
-    OUTCOME_IX = 1
 else:
     IN_NOTEBOOK = False
     src_path = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
     parser = argparse.ArgumentParser(description='')
     parser.add_argument('-n',metavar= 50, type=int, default=50,help='''optuna优化尝试次数''')
-    parser.add_argument('-outcome_ix',metavar= 0, type=int, default=0,help='''选择预测结局, 为 `get_ite_features()`返回的预设 outcomes 列表的索引''')
     sys_args = parser.parse_args()
     N_TRIAL = sys_args.n
-    OUTCOME_IX = sys_args.outcome_ix
     RUN_MODE = 'tuning' # 脚本模式只做tuing!
 
 sys.path.append(src_path) if src_path not in sys.path else None
