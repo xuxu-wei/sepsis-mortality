@@ -2,6 +2,7 @@ import os, shutil, re, sys
 import pandas as pd
 import numpy as np
 import psutil
+import random
 
 if not sys.platform.startswith('win'):
     import resource
@@ -10,6 +11,21 @@ if not sys.platform.startswith('win'):
 def in_notebook():
     return 'IPKernelApp' in getattr(globals().get('get_ipython', lambda: None)(), 'config', {})
 
+def set_random_seed(seed):
+    """
+    Set random seed for reproducibility across numpy, random, and PyTorch.
+    """
+    random.seed(seed)  # Python 的随机数生成器
+    np.random.seed(seed)  # NumPy 的随机数生成器
+    try:
+        import torch
+        torch.manual_seed(seed)  # PyTorch 的随机数生成器（CPU）
+        torch.cuda.manual_seed(seed)  # PyTorch 的随机数生成器（当前 GPU）
+        torch.cuda.manual_seed_all(seed)  # PyTorch 的随机数生成器（所有 GPU）
+        torch.backends.cudnn.deterministic = True  # 保证每次卷积的结果一致
+        torch.backends.cudnn.benchmark = False  # 禁用自动优化
+    except:
+        pass
 
 def show_dataframe(data):
     if in_notebook():
