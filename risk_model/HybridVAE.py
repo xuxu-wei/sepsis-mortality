@@ -7,6 +7,7 @@ import torch.nn.functional as F
 from sklearn.base import BaseEstimator, RegressorMixin
 from sklearn.metrics import mean_squared_error, roc_auc_score
 from sklearn.base import BaseEstimator, ClassifierMixin, TransformerMixin
+from torch.optim.lr_scheduler import ReduceLROnPlateau, StepLR
 import matplotlib.pyplot as plt
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -42,6 +43,7 @@ class Encoder(nn.Module):
                 [
                     nn.Dropout(dropout_rate),  # Dropout to reduce overfitting
                     nn.Linear(hidden_dim, hidden_dim),
+                    nn.BatchNorm1d(hidden_dim),
                     nn.LeakyReLU(),
                 ]
             )
@@ -49,6 +51,7 @@ class Encoder(nn.Module):
         # Encoder structure
         self.body = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
             nn.LeakyReLU(),
             *hidden,
         )
@@ -96,6 +99,7 @@ class Decoder(nn.Module):
                 [
                     nn.Dropout(dropout_rate),  # Dropout to reduce overfitting
                     nn.Linear(hidden_dim, hidden_dim),
+                    nn.BatchNorm1d(hidden_dim),
                     nn.LeakyReLU(),
                 ]
             )
@@ -103,6 +107,7 @@ class Decoder(nn.Module):
         # Decoder structure
         self.body = nn.Sequential(
             nn.Linear(latent_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
             nn.LeakyReLU(),
             *hidden,
         )
@@ -206,6 +211,7 @@ class MultiTaskPredictor(nn.Module):
                 [
                     nn.Dropout(dropout_rate),
                     nn.Linear(hidden_dim, hidden_dim),
+                    nn.BatchNorm1d(hidden_dim),
                     nn.LeakyReLU(),
                 ]
             )
@@ -213,6 +219,7 @@ class MultiTaskPredictor(nn.Module):
         # Shared body
         self.body = nn.Sequential(
             nn.Linear(latent_dim, hidden_dim),
+            nn.BatchNorm1d(hidden_dim),
             nn.LeakyReLU(),
             *hidden,
         )
@@ -270,6 +277,13 @@ class HybridVAEMultiTaskModel(nn.Module):
         Batch size for training (default is 32).
     validation_split : float, optional
         Fraction of the data to use for validation (default is 0.2).
+    use_lr_scheduler : bool, optional
+        Whether to enable ReduceLROnPlateau learning rate scheduler for both VAE and Multi-Task predictors
+        based on validation losses (default is True). If False, no learning rate adjustments will be made.
+    lr_scheduler_factor : float, optional
+        Factor by which the learning rate will be reduced when the scheduler is triggered (default is 0.1).
+    lr_scheduler_patience : int, optional
+        Number of validation epochs to wait for improvement before reducing the learning rate (default is 50).
     Methods
     -------
     forward(x)
@@ -303,6 +317,9 @@ class HybridVAEMultiTaskModel(nn.Module):
                  gamma_task=1.0,
                  batch_size=200, 
                  validation_split=0.3, 
+                 use_lr_scheduler=True,
+                 lr_scheduler_factor=0.1,
+                 lr_scheduler_patience=50,
                  ):
         super(HybridVAEMultiTaskModel, self).__init__()
         self.vae = VAE(input_dim, depth=vae_depth, hidden_dim=vae_hidden_dim, dropout_rate=vae_dropout_rate, latent_dim=latent_dim)
@@ -326,6 +343,9 @@ class HybridVAEMultiTaskModel(nn.Module):
         self.gamma_task = gamma_task
         self.batch_size = batch_size
         self.validation_split = validation_split
+        self.use_lr_scheduler = use_lr_scheduler
+        self.lr_scheduler_factor = lr_scheduler_factor
+        self.lr_scheduler_patience = lr_scheduler_patience
 
     def reset_parameters(self, seed=19960816):
         for layer in self.modules():
@@ -437,7 +457,7 @@ class HybridVAEMultiTaskModel(nn.Module):
             alpha = torch.ones(len(task_outputs), device=DEVICE)  # Default to uniform weights
 
         # Clamp task_outputs to [1e-6, 1 - 1e-6] to avoid log(0)
-        task_outputs_clamped = [torch.clamp(output, min=1e-9, max=1 - 1e-9) for output in task_outputs]
+        task_outputs_clamped = [torch.clamp(output, min=1e-9, max=1-1e-9) for output in task_outputs]
 
         task_losses = [
             alpha[t] * task_loss_fn(task_outputs_clamped[t], y[:, t].unsqueeze(1))
@@ -480,7 +500,7 @@ class HybridVAEMultiTaskModel(nn.Module):
         early_stopping : bool, optional
             Whether to enable early stopping based on validation loss (default is False).
         patience : int, optional
-            Number of epochs to wait for improvement in validation loss before stopping (default is 5).
+            Number of epochs to wait for improvement in validation loss before stopping (default is 100).
         verbose : bool, optional
             If True, displays tqdm progress bar. If False, suppresses tqdm output (default is True).
         plot_path : str or None, optional
@@ -518,6 +538,11 @@ class HybridVAEMultiTaskModel(nn.Module):
         # Separate optimizers for VAE and MultiTask predictor
         vae_optimizer = torch.optim.Adam(self.vae.parameters(), lr=self.vae_lr, weight_decay=self.vae_weight_decay, eps=1e-8)
         multitask_optimizer = torch.optim.Adam(self.predictor.parameters(), lr=self.multitask_lr, weight_decay=self.multitask_weight_decay, eps=1e-8)
+
+        # 初始化调度器（仅当启用时）
+        if self.use_lr_scheduler:
+            vae_scheduler = ReduceLROnPlateau(vae_optimizer, mode='min', factor=0.1, patience=int(1/3 * patience))
+            multitask_scheduler = ReduceLROnPlateau(multitask_optimizer, mode='min', factor=0.1, patience=int(1/3 * patience))
 
         # Initialize best losses and patience counters
         best_vae_loss = float('inf')
@@ -591,6 +616,10 @@ class HybridVAEMultiTaskModel(nn.Module):
                     # Accumulate losses
                     val_vae_loss += (recon_loss.item() + kl_loss.item())
                     val_task_loss += task_loss.item()
+
+            if self.use_lr_scheduler:
+                vae_scheduler.step(val_vae_loss)  # 调用时需传入验证损失
+                multitask_scheduler.step(val_task_loss)
 
             # Normalize validation losses by the number of batches
             val_vae_loss /= len(X_val)
@@ -771,6 +800,9 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
                  gamma_task=1.0,
                  batch_size=200, 
                  validation_split=0.3, 
+                 use_lr_scheduler=True,
+                 lr_scheduler_factor=0.1,
+                 lr_scheduler_patience=50,
                  ):
         super().__init__(input_dim=input_dim, 
                          vae_hidden_dim=vae_hidden_dim, 
@@ -790,6 +822,9 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
                          gamma_task=gamma_task,
                          batch_size=batch_size,
                          validation_split=validation_split,
+                         use_lr_scheduler=use_lr_scheduler,
+                         lr_scheduler_factor=lr_scheduler_factor,
+                         lr_scheduler_patience=lr_scheduler_patience,
                          )
     
     def fit(self, X, y, *args, **kwargs):

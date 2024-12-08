@@ -81,77 +81,89 @@ print(f'training data: {X.shape}')
 if RUN_MODE=='tuning':
 
     def objective(trial):
-        # 定义需要调优的超参数范围
-        vae_hidden_dim = trial.suggest_int("vae_hidden_dim", 50, 300, step=10)
-        vae_depth = trial.suggest_int("vae_depth", 1, 5, step=1)
-        vae_dropout_rate = trial.suggest_float("vae_dropout_rate", 0.0, 0.5, step=0.05)
-        latent_dim = trial.suggest_int("latent_dim", 5, 15, step=1)
-        predictor_hidden_dim = trial.suggest_int("predictor_hidden_dim", 50, 300, step=10)
-        predictor_depth = trial.suggest_int("predictor_depth", 1, 5, step=1)
-        predictor_dropout_rate = trial.suggest_float("predictor_dropout_rate", 0.0, 0.5, step=0.05)
+        try:
+            # 定义需要调优的超参数范围
+            vae_hidden_dim = trial.suggest_int("vae_hidden_dim", 50, 300, step=10)
+            vae_depth = trial.suggest_int("vae_depth", 1, 5, step=1)
+            vae_dropout_rate = trial.suggest_float("vae_dropout_rate", 0.0, 0.5, step=0.05)
+            latent_dim = trial.suggest_int("latent_dim", 5, 15, step=1)
+            predictor_hidden_dim = trial.suggest_int("predictor_hidden_dim", 50, 300, step=10)
+            predictor_depth = trial.suggest_int("predictor_depth", 1, 5, step=1)
+            predictor_dropout_rate = trial.suggest_float("predictor_dropout_rate", 0.0, 0.5, step=0.05)
 
-        vae_lr = trial.suggest_float("vae_lr", 1e-5, 1e-2, log=True)
-        vae_weight_decay = trial.suggest_float("vae_weight_decay", 1e-5, 1e-2, log=True)
-        multitask_lr = trial.suggest_float("multitask_lr", 1e-5, 1e-2, log=True)
-        multitask_weight_decay = trial.suggest_float("multitask_weight_decay", 1e-5, 1e-2, log=True)
-        beta = trial.suggest_float("beta", 1.0, 5.0, step=0.1)
-        gamma_task = trial.suggest_float("gamma_task", 1.0, 5.0, step=0.1)
-        batch_size = trial.suggest_int("batch_size", 200, 1000, step=100)
-        validation_split = trial.suggest_categorical("validation_split", [0.2, 0.3, 0.4])
+            vae_lr = trial.suggest_float("vae_lr", 1e-5, 1e-2, log=True)
+            vae_weight_decay = trial.suggest_float("vae_weight_decay", 1e-5, 1e-2, log=True)
+            multitask_lr = trial.suggest_float("multitask_lr", 1e-5, 1e-2, log=True)
+            multitask_weight_decay = trial.suggest_float("multitask_weight_decay", 1e-5, 1e-2, log=True)
+            beta = trial.suggest_float("beta", 1.0, 5.0, step=0.1)
+            gamma_task = trial.suggest_float("gamma_task", 1.0, 5.0, step=0.1)
+            batch_size = trial.suggest_int("batch_size", 200, 1000, step=100)
+            validation_split = trial.suggest_categorical("validation_split", [0.2, 0.3, 0.4])
+            use_lr_scheduler = trial.suggest_categorical("use_lr_scheduler", [True, False])
+            lr_scheduler_factor = trial.suggest_categorical("lr_scheduler_factor", [0.1, 0.2])
+            fit_patience = 200
+            lr_scheduler_patience = trial.suggest_categorical("lr_scheduler_patience", [int(fit_patience/2), int(fit_patience/3), int(fit_patience/4),])
 
-        # 初始化模型
-        model = HybridVAEMultiTaskSklearn(input_dim=X.shape[1],
-                                          task_count=y.shape[1],
-                                          vae_hidden_dim=vae_hidden_dim,
-                                          vae_depth=vae_depth,
-                                          vae_dropout_rate=vae_dropout_rate,
-                                          latent_dim=latent_dim,
-                                          predictor_hidden_dim=predictor_hidden_dim,
-                                          predictor_depth=predictor_depth,
-                                          predictor_dropout_rate=predictor_dropout_rate,
-                                          vae_lr=vae_lr,
-                                          vae_weight_decay=vae_weight_decay,
-                                          multitask_lr=multitask_lr,
-                                          multitask_weight_decay=multitask_weight_decay,
-                                          alphas=None,
-                                          beta=beta,
-                                          gamma_task=gamma_task,
-                                          batch_size=batch_size,
-                                          validation_split=validation_split,
-                                          )
-        # 实现交叉验证
-        kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=19960816)
-        aucs_1 = []
-        aucs_2 = []
-        recon_losses = []
-        vae_losses = []
+            # 初始化模型
+            model = HybridVAEMultiTaskSklearn(input_dim=X.shape[1],
+                                            task_count=y.shape[1],
+                                            vae_hidden_dim=vae_hidden_dim,
+                                            vae_depth=vae_depth,
+                                            vae_dropout_rate=vae_dropout_rate,
+                                            latent_dim=latent_dim,
+                                            predictor_hidden_dim=predictor_hidden_dim,
+                                            predictor_depth=predictor_depth,
+                                            predictor_dropout_rate=predictor_dropout_rate,
+                                            vae_lr=vae_lr,
+                                            vae_weight_decay=vae_weight_decay,
+                                            multitask_lr=multitask_lr,
+                                            multitask_weight_decay=multitask_weight_decay,
+                                            alphas=None,
+                                            beta=beta,
+                                            gamma_task=gamma_task,
+                                            batch_size=batch_size,
+                                            validation_split=validation_split,
+                                            use_lr_scheduler=use_lr_scheduler,
+                                            lr_scheduler_factor=lr_scheduler_factor,
+                                            lr_scheduler_patience=lr_scheduler_patience,
+                                            )
+            # 实现交叉验证
+            kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=19960816)
+            aucs_1 = []
+            aucs_2 = []
+            recon_losses = []
+            vae_losses = []
 
-        for i, (train_index, val_index) in enumerate(kf.split(X, y.iloc[:,0])): # stratified by primary outcome
-            # 划分训练集和验证集
-            X_train, X_val = X.iloc[train_index], X.iloc[val_index]
-            y_train, y_val = y.iloc[train_index], y.iloc[val_index]
-            
-            # 训练模型
-            model.fit(X_train, y_train,
-                        epochs=2000, 
-                        early_stopping=True, 
-                        patience=200,
-                        verbose=0, 
-                        plot_path=None,
-                        save_weights_path=None)
-            
-            # 验证模型并记录分数
-            auc1, auc2 = model.score(X_val, y_val)  # 默认AUC
-            total_loss, recon_loss, kl_loss, task_loss = model.eval_loss(X, y)
-            vae_loss = recon_loss + model.beta * kl_loss
+            for i, (train_index, val_index) in enumerate(kf.split(X, y.iloc[:,0])): # stratified by primary outcome
+                # 划分训练集和验证集
+                X_train, X_val = X.iloc[train_index], X.iloc[val_index]
+                y_train, y_val = y.iloc[train_index], y.iloc[val_index]
+                
+                # 训练模型
+                model.fit(X_train, y_train,
+                            epochs=2000, 
+                            early_stopping=True, 
+                            patience=fit_patience,
+                            verbose=0, 
+                            plot_path=None,
+                            save_weights_path=None)
+                
+                # 验证模型并记录分数
+                auc1, auc2 = model.score(X_val, y_val)  # 默认AUC
+                total_loss, recon_loss, kl_loss, task_loss = model.eval_loss(X, y)
+                vae_loss = recon_loss + model.beta * kl_loss
 
-            aucs_1.append(auc1)
-            aucs_2.append(auc2)
-            recon_losses.append(recon_loss)
-            vae_losses.append(vae_loss)
+                aucs_1.append(auc1)
+                aucs_2.append(auc2)
+                recon_losses.append(recon_loss)
+                vae_losses.append(vae_loss)
 
-        # 返回平均交叉验证分数（负均方误差）
-        return np.mean(aucs_1), np.mean(aucs_2), np.mean(vae_losses), np.mean(recon_losses)
+            # 返回平均交叉验证分数（负均方误差）
+            return np.mean(aucs_1), np.mean(aucs_2), np.mean(vae_losses), np.mean(recon_losses)
+        except Exception as e:
+            print(f"Trial failed with error: {e}")
+            return -np.inf, -np.inf, np.inf, np.inf
+
 
     # 日志功能：设置 Optuna 的日志级别
     # optuna.logging.set_verbosity(optuna.logging.INFO)
@@ -241,7 +253,7 @@ if RUN_MODE=='tuning':
     best_model.fit(X, y,
                     epochs=2000, 
                     early_stopping=True, 
-                    patience=100,
+                    patience=200,
                     verbose=2, 
                     plot_path=risk_hybrid_vae,
                     save_weights_path=risk_hybrid_vae)
