@@ -11,6 +11,14 @@ import pickle
 import joblib
 import torch
 import optuna
+from optuna.visualization import (
+    plot_parallel_coordinate,
+    plot_param_importances,
+    plot_contour,
+    plot_slice,
+    plot_optimization_history,
+    plot_pareto_front,
+)
 import seaborn as sns
 import plotly.graph_objects as go
 sns.set_theme('paper')
@@ -225,59 +233,55 @@ if RUN_MODE=='tuning':
     df_trials = study.trials_dataframe()
     df_trials.to_excel(f"{risk_hybrid_vae}/tuning_history.xlsx", index=False)
 
-    # 使用一个 Pareto 最优解重新初始化模型
-    best_trial = pareto_front[0] # 选择第一个 Pareto 解
-    best_params = best_trial.params
-    
-    # 使用最佳参数重新初始化模型
-    best_model = HybridVAEMultiTaskSklearn(input_dim=X.shape[1],
-                                          task_count=y.shape[1],
-                                          vae_hidden_dim=best_params["vae_hidden_dim"],
-                                          vae_depth=best_params["vae_depth"],
-                                          vae_dropout_rate=best_params["vae_dropout_rate"],
-                                          latent_dim=best_params["latent_dim"],
-                                          predictor_hidden_dim=best_params["predictor_hidden_dim"],
-                                          predictor_depth=best_params["predictor_depth"],
-                                          predictor_dropout_rate=best_params["predictor_dropout_rate"],
-                                          vae_lr=best_params["vae_lr"],
-                                          vae_weight_decay=best_params["vae_weight_decay"],
-                                          multitask_lr=best_params["multitask_lr"],
-                                          multitask_weight_decay=best_params["multitask_weight_decay"],
-                                          alphas=None,
-                                          beta=best_params["beta"],
-                                          gamma_task=best_params["gamma_task"],
-                                          batch_size=best_params["batch_size"],
-                                          validation_split=best_params["validation_split"],
-                                          )
-
-    # 训练最佳模型
-    print('使用最佳参数在全集上训练模型')
-    best_model.fit(X, y,
-                    epochs=2000, 
-                    early_stopping=True, 
-                    patience=200,
-                    verbose=2, 
-                    plot_path=risk_hybrid_vae,
-                    save_weights_path=risk_hybrid_vae)
-
 # %%
-print('最终AUC:',best_model.score(X, y))
+if RUN_MODE=='tuning':
+    pass
 
-# %%
-if RUN_MODE=='reload':
+elif RUN_MODE=='reload':
     with open(f"{risk_hybrid_vae}/optuna_study.pkl", "rb") as f:
         print('正在加载指定optuna调参试验结果')
         study = pickle.load(f)
+        
+# 使用一个 Pareto 最优解重新初始化模型
+pareto_front = study.best_trials
+best_trial = pareto_front[0] # 选择第一个 Pareto 解
+best_params = best_trial.params
 
-from optuna.visualization import (
-    plot_parallel_coordinate,
-    plot_param_importances,
-    plot_contour,
-    plot_slice,
-    plot_optimization_history,
-    plot_pareto_front,
-)
+# 使用最佳参数重新初始化模型
+best_model = HybridVAEMultiTaskSklearn(input_dim=X.shape[1],
+                                        task_count=y.shape[1],
+                                        vae_hidden_dim=best_params["vae_hidden_dim"],
+                                        vae_depth=best_params["vae_depth"],
+                                        vae_dropout_rate=best_params["vae_dropout_rate"],
+                                        latent_dim=best_params["latent_dim"],
+                                        predictor_hidden_dim=best_params["predictor_hidden_dim"],
+                                        predictor_depth=best_params["predictor_depth"],
+                                        predictor_dropout_rate=best_params["predictor_dropout_rate"],
+                                        vae_lr=best_params["vae_lr"],
+                                        vae_weight_decay=best_params["vae_weight_decay"],
+                                        multitask_lr=best_params["multitask_lr"],
+                                        multitask_weight_decay=best_params["multitask_weight_decay"],
+                                        alphas=None,
+                                        beta=best_params["beta"],
+                                        gamma_task=best_params["gamma_task"],
+                                        batch_size=best_params["batch_size"],
+                                        validation_split=best_params["validation_split"],
+                                        )
 
+# 训练最佳模型
+print('使用最佳参数在全集上训练模型')
+best_model.fit(X, y,
+                epochs=2000, 
+                early_stopping=True, 
+                patience=200,
+                verbose=2, 
+                animate_monitor=True,
+                plot_path=risk_hybrid_vae,
+                save_weights_path=risk_hybrid_vae)
+
+print(f'最终AUC: {best_model.score(X, y)}')
+
+# %%
 # 绘制不同的图表
 target_args_1 = dict(target = lambda t: -t.values[0], target_name="AUC-primary")
 target_args_2 = dict(target = lambda t: -t.values[1], target_name="AUC-secondary")

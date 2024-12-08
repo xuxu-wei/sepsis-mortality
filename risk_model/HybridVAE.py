@@ -488,6 +488,7 @@ class HybridVAEMultiTaskModel(nn.Module):
             early_stopping=True, 
             patience=100,
             verbose=True, 
+            animate_monitor=False,
             plot_path=None,
             save_weights_path=None):
         """
@@ -663,7 +664,7 @@ class HybridVAEMultiTaskModel(nn.Module):
                     break
 
             # Save loss plot every 100 epochs
-            if ((epoch + 1) % 100 == 0) and (is_interactive_environment() or plot_path):
+            if ((epoch + 1) % 100 == 0) and ((is_interactive_environment() and animate_monitor) or plot_path):
                 loss_plot_path = None
                 if plot_path:
                     loss_plot_path = os.path.join(plot_path, f"loss_epoch.jpg")
