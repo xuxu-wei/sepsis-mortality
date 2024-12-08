@@ -23,8 +23,9 @@ IN_NOTEBOOK = None
 def in_notebook():
     return 'IPKernelApp' in getattr(globals().get('get_ipython', lambda: None)(), 'config', {})
     
-if IN_NOTEBOOK:
+if in_notebook():
     IN_NOTEBOOK = True
+    print('run in notebook')
     from IPython.display import clear_output, display
     notebook_dir = os.getcwd()
     src_path = os.path.abspath(os.path.join(notebook_dir, '..'))
@@ -32,14 +33,16 @@ if IN_NOTEBOOK:
     N_TRIAL = 3
 else:
     IN_NOTEBOOK = False
+    print('run in script')
     src_path = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
     parser = argparse.ArgumentParser(description='')
-    parser.add_argument('-n',metavar= 50, type=int, default=50,help='''optuna优化尝试次数''')
+    parser.add_argument('-n', metavar= 50, type=int, default=50,help='''optuna优化尝试次数''')
     sys_args = parser.parse_args()
     N_TRIAL = sys_args.n
     RUN_MODE = 'tuning' # 脚本模式只做tuing!
 
 sys.path.append(src_path) if src_path not in sys.path else None
+os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 from src.utils import *
 from src.model_utils import to_numpy, check_tensor

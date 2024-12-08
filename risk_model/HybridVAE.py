@@ -1,4 +1,4 @@
-import os
+import os, sys
 from tqdm import tqdm
 import numpy as np
 import torch
@@ -436,9 +436,12 @@ class HybridVAEMultiTaskModel(nn.Module):
         if alpha is None:
             alpha = torch.ones(len(task_outputs), device=DEVICE)  # Default to uniform weights
 
+        # Clamp task_outputs to [1e-6, 1 - 1e-6] to avoid log(0)
+        task_outputs_clamped = [torch.clamp(output, min=1e-9, max=1 - 1e-9) for output in task_outputs]
+
         task_losses = [
-            alpha[t] * task_loss_fn(task_outputs[t], y[:, t].unsqueeze(1))  # Adjust target shape
-            for t in range(len(task_outputs))
+            alpha[t] * task_loss_fn(task_outputs_clamped[t], y[:, t].unsqueeze(1))
+            for t in range(len(task_outputs_clamped))
         ]
         task_loss = sum(task_losses)
 
@@ -694,13 +697,14 @@ class HybridVAEMultiTaskModel(nn.Module):
             plt.savefig(save_path, dpi=360)
 
         # Check if running in notebook
-        try:
-            from IPython.display import clear_output, display
-            clear_output(wait=True)
-            display(plt.gcf())
-            plt.pause(0.1)
-        except ImportError:
-            pass  # Not in a notebook, no dynamic plotting
+        if hasattr(sys, 'ps1') or ('IPython' in sys.modules and hasattr(sys, 'argv') and sys.argv[0].endswith('notebook')):
+            try:
+                from IPython.display import display, clear_output
+                clear_output(wait=True)
+                display(plt.gcf())
+                plt.pause(0.1)
+            except ImportError:
+                pass
         
         # Close the plot if it was saved, but avoid closing for interactive use
         if save_path:
