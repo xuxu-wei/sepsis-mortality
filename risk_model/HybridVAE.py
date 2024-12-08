@@ -145,10 +145,10 @@ class VAE(nn.Module):
     reparameterize(mu, logvar)
         Reparameterization trick for sampling latent space.
     """
-    def __init__(self, input_dim=30, depth=3, hidden_dim=64, dropout_rate=0.3, latent_dim=10):
+    def __init__(self, input_dim=30, depth=3, hidden_dim=64, dropout_rate=0.3, latent_dim=10, use_batch_norm=True):
         super(VAE, self).__init__()
-        self.encoder = Encoder(input_dim, depth, hidden_dim, dropout_rate, latent_dim)
-        self.decoder = Decoder(input_dim, depth, hidden_dim, dropout_rate, latent_dim)
+        self.encoder = Encoder(input_dim, depth, hidden_dim, dropout_rate, latent_dim, use_batch_norm)
+        self.decoder = Decoder(input_dim, depth, hidden_dim, dropout_rate, latent_dim, use_batch_norm)
     
     @staticmethod
     def reparameterize(mu, logvar):
