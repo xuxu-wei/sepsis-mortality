@@ -286,11 +286,11 @@ class HybridVAEMultiTaskModel(nn.Module):
     def __init__(self, 
                  input_dim=30, 
                  vae_hidden_dim=64, 
-                 vae_depth=3,
+                 vae_depth=1,
                  vae_dropout_rate=0.3, 
                  latent_dim=10, 
                  predictor_hidden_dim=64, 
-                 predictor_depth=3,
+                 predictor_depth=1,
                  predictor_dropout_rate=0.3, 
                  task_count=2,
                  # training related params for param tuning
@@ -357,6 +357,7 @@ class HybridVAEMultiTaskModel(nn.Module):
         list of torch.Tensor
             List of task-specific prediction tensors, each with shape (batch_size, 1).
         """
+        x = self.check_tensor(x).to(DEVICE)
         recon, mu, logvar, z = self.vae(x)
         task_outputs = self.predictor(z)
         return recon, mu, logvar, z, task_outputs
@@ -385,7 +386,7 @@ class HybridVAEMultiTaskModel(nn.Module):
         else:
             return torch.from_numpy(np.asarray(X, dtype=np.float32)).to(DEVICE)
 
-    def compute_loss(self, recon, x, mu, logvar, task_outputs, y, beta=1.0, gamma_task=1.0, alpha=None):
+    def compute_loss(self, recon, x, mu, logvar, task_outputs, y, beta=1.0, gamma_task=1.0, alpha=None, normalize_loss=False):
         """
         Compute total loss for VAE and multi-task predictor.
 
@@ -409,11 +410,19 @@ class HybridVAEMultiTaskModel(nn.Module):
             Weight of the task loss term (default is 1.0).
         alpha : list or torch.Tensor, optional
             Per-task weights, shape (num_tasks,). Default is uniform weights.
+        normalize_loss : bool, optional
+            If True, normalize the scale of recon_loss, kl_loss, and task_loss.
 
         Returns
         -------
         torch.Tensor
             Total loss value.
+        torch.Tensor
+            Normalized reconstruction loss (if normalize_loss is True).
+        torch.Tensor
+            Normalized KL divergence loss (if normalize_loss is True).
+        torch.Tensor
+            Normalized task-specific loss (if normalize_loss is True).
         """
         # Reconstruction loss
         reconstruction_loss_fn = nn.MSELoss(reduction='sum')
@@ -431,13 +440,22 @@ class HybridVAEMultiTaskModel(nn.Module):
             alpha[t] * task_loss_fn(task_outputs[t], y[:, t].unsqueeze(1))  # Adjust target shape
             for t in range(len(task_outputs))
         ]
-        total_task_loss = sum(task_losses)
+        task_loss = sum(task_losses)
 
-        # Total loss
-        total_loss = recon_loss + beta * kl_loss + gamma_task * total_task_loss
+        if normalize_loss:
+            # Normalize each loss by its scale
+            recon_loss_norm = recon_loss / (recon_loss.item() + 1e-8)
+            kl_loss_norm = kl_loss / (kl_loss.item() + 1e-8)
+            task_loss_norm = task_loss / (task_loss.item() + 1e-8)
 
-        return total_loss, recon_loss, kl_loss, total_task_loss
+            total_loss = beta * (recon_loss_norm + kl_loss_norm) + gamma_task * task_loss_norm
+            return total_loss, recon_loss_norm, kl_loss_norm, task_loss_norm
+        else:
+            # Use raw losses with predefined weights
+            total_loss = beta * (recon_loss + kl_loss) + gamma_task * task_loss
+            return total_loss, recon_loss, kl_loss, task_loss
 
+    
     def fit(self, X, Y, 
             epochs=2000, 
             early_stopping=True, 
@@ -645,38 +663,48 @@ class HybridVAEMultiTaskModel(nn.Module):
         """
         plt.figure(figsize=(12, 6))
 
+        # Check if log scale is needed
+        use_log_scale = len(train_vae_losses) > 10000
+
         # VAE Loss Plot
         plt.subplot(1, 2, 1)
         plt.plot(train_vae_losses, label='Train VAE Loss')
         plt.plot(val_vae_losses, label='Val VAE Loss')
-        plt.xlabel('Epochs')
+        plt.xlabel('Epochs (Log Scale)' if use_log_scale else 'Epochs')
         plt.ylabel('VAE Loss')
         plt.legend()
         plt.title('VAE Loss (Reconstruction + KL)')
         plt.grid()
+        if use_log_scale:
+            plt.xscale('log')
 
         # Task Loss Plot
         plt.subplot(1, 2, 2)
         plt.plot(train_task_losses, label='Train Task Loss')
         plt.plot(val_task_losses, label='Val Task Loss')
-        plt.xlabel('Epochs')
+        plt.xlabel('Epochs (Log Scale)' if use_log_scale else 'Epochs')
         plt.ylabel('Task Loss (BCE)')
         plt.legend()
         plt.title('Task Loss (BCE)')
         plt.grid()
+        if use_log_scale:
+            plt.xscale('log')
 
         if save_path:
             plt.savefig(save_path, dpi=360)
+
+        # Check if running in notebook
+        try:
+            from IPython.display import clear_output, display
+            clear_output(wait=True)
+            display(plt.gcf())
+            plt.pause(0.1)
+        except ImportError:
+            pass  # Not in a notebook, no dynamic plotting
+        
+        # Close the plot if it was saved, but avoid closing for interactive use
+        if save_path:
             plt.close()
-        else:
-            # Check if running in notebook
-            try:
-                from IPython.display import clear_output, display
-                clear_output(wait=True)
-                display(plt.gcf())
-                plt.pause(0.1)
-            except ImportError:
-                pass  # Not in a notebook, no dynamic plotting
 
     def save_model(self, save_path, epoch):
         """
@@ -911,7 +939,25 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
             auc = roc_auc_score(Y[:, t], probas[t, :], average=average, *args, **kwargs)
             scores.append(auc)
         return np.array(scores)
-
+    
+    def eval_loss(self, X, Y):
+        X = self.check_tensor(X).to(DEVICE)
+        Y = self.check_tensor(Y).to(DEVICE)
+        self.eval()
+        # Forward pass
+        with torch.no_grad():
+            recon, mu, logvar, z, task_outputs = self(X)
+            total_loss, recon_loss, kl_loss, task_loss = self.compute_loss(
+                recon, X, mu, logvar, task_outputs, Y, 
+                beta=self.beta, gamma_task=self.gamma_task, alpha=self.alphas, normalize_loss=False
+            )
+        
+        # Convert losses to NumPy arrays
+        return (total_loss.item(),  # Convert scalar tensor to Python float
+                recon_loss.item(),
+                kl_loss.item(),
+                task_loss.item())
+    
     def get_feature_names_out(self, input_features=None):
         """
         Get output feature names (latent space).
