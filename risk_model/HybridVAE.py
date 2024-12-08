@@ -643,6 +643,7 @@ class HybridVAEMultiTaskModel(nn.Module):
         # Save final weights
         if save_weights_path:
             self.save_model(save_weights_path, "final")
+            print(f'最终模型参数已保存: {os.path.join(save_weights_path, f"epoch_final.pth")}') if verbose > 0 else None
 
         return self
 

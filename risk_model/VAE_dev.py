@@ -30,7 +30,7 @@ if in_notebook():
     notebook_dir = os.getcwd()
     src_path = os.path.abspath(os.path.join(notebook_dir, '..'))
     RUN_MODE = 'tuning' # reload: 重现study; tuning 搜索超参数
-    N_TRIAL = 3
+    N_TRIAL = 5
 else:
     IN_NOTEBOOK = False
     print('run in script')
@@ -237,14 +237,17 @@ if RUN_MODE=='tuning':
                                           )
 
     # 训练最佳模型
-    print('使用最佳参数在全集上模型')
+    print('使用最佳参数在全集上训练模型')
     best_model.fit(X, y,
                     epochs=2000, 
                     early_stopping=True, 
-                    patience=200,
+                    patience=100,
                     verbose=2, 
                     plot_path=risk_hybrid_vae,
                     save_weights_path=risk_hybrid_vae)
+
+# %%
+print('最终AUC:',best_model.score(X, y))
 
 # %%
 if RUN_MODE=='reload':
