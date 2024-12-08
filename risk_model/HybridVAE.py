@@ -624,13 +624,13 @@ class HybridVAEMultiTaskModel(nn.Module):
 
                 # Stop if both counters exceed patience
                 if vae_patience_counter >= patience and task_patience_counter >= patience:
-                    print("Early stopping triggered due to no improvement in both VAE and task losses.")
+                    print("Early stopping triggered due to no improvement in both VAE and task losses.") if verbose > 0 else None
                     if save_weights_path:
                         self.save_model(save_weights_path, "final")
                     break
 
             # Save loss plot every 100 epochs
-            if (epoch + 1) % 100 == 0:
+            if ((epoch + 1) % 100 == 0) and (is_interactive_environment() or plot_path):
                 loss_plot_path = None
                 if plot_path:
                     loss_plot_path = os.path.join(plot_path, f"loss_epoch.jpg")
@@ -707,8 +707,7 @@ class HybridVAEMultiTaskModel(nn.Module):
                 pass
         
         # Close the plot if it was saved, but avoid closing for interactive use
-        if save_path:
-            plt.close()
+        plt.close()
 
     def save_model(self, save_path, epoch):
         """
@@ -973,3 +972,23 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
         """
         return [f"latent_{i}" for i in range(self.vae.encoder.latent_mu.out_features)]
 
+def is_interactive_environment():
+    """
+    Detect if the code is running in an interactive environment (e.g., Jupyter Notebook or IPython).
+
+    Returns
+    -------
+    bool
+        True if running in an interactive environment, False otherwise.
+    """
+    try:
+        # Check if running in IPython or Jupyter Notebook
+        if hasattr(sys, 'ps1'):  # Standard interactive interpreter (Python REPL)
+            return True
+        if 'IPython' in sys.modules:  # IPython or Jupyter environment
+            import IPython
+            return IPython.get_ipython() is not None
+    except ImportError:
+        pass  # IPython not installed
+
+    return False  # Not an interactive environment
