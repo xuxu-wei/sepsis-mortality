@@ -103,6 +103,7 @@ if RUN_MODE=='tuning':
             lr_scheduler_factor = trial.suggest_categorical("lr_scheduler_factor", [0.1, 0.2])
             fit_patience = 200
             lr_scheduler_patience = trial.suggest_categorical("lr_scheduler_patience", [int(fit_patience/2), int(fit_patience/3), int(fit_patience/4),])
+            use_batch_norm = trial.suggest_categorical("use_batch_norm", [True, False])
 
             # 初始化模型
             model = HybridVAEMultiTaskSklearn(input_dim=X.shape[1],
@@ -126,6 +127,7 @@ if RUN_MODE=='tuning':
                                             use_lr_scheduler=use_lr_scheduler,
                                             lr_scheduler_factor=lr_scheduler_factor,
                                             lr_scheduler_patience=lr_scheduler_patience,
+                                            use_batch_norm=use_batch_norm,
                                             )
             # 实现交叉验证
             kf = StratifiedKFold(n_splits=5, shuffle=True, random_state=19960816)

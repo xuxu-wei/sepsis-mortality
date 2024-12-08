@@ -33,7 +33,7 @@ class Encoder(nn.Module):
     forward(x)
         Forward pass to compute latent mean and log variance.
     """
-    def __init__(self, input_dim=30, depth=3, hidden_dim=64, dropout_rate=0.3, latent_dim=10):
+    def __init__(self, input_dim=30, depth=3, hidden_dim=64, dropout_rate=0.3, latent_dim=10, use_batch_norm=True):
         super(Encoder, self).__init__()
 
         # Hidden layers
@@ -43,7 +43,7 @@ class Encoder(nn.Module):
                 [
                     nn.Dropout(dropout_rate),  # Dropout to reduce overfitting
                     nn.Linear(hidden_dim, hidden_dim),
-                    nn.BatchNorm1d(hidden_dim),
+                    nn.BatchNorm1d(hidden_dim) if use_batch_norm else nn.Identity(),
                     nn.LeakyReLU(),
                 ]
             )
@@ -51,7 +51,7 @@ class Encoder(nn.Module):
         # Encoder structure
         self.body = nn.Sequential(
             nn.Linear(input_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
+            nn.BatchNorm1d(hidden_dim) if use_batch_norm else nn.Identity(),
             nn.LeakyReLU(),
             *hidden,
         )
@@ -89,7 +89,7 @@ class Decoder(nn.Module):
     forward(z)
         Forward pass to reconstruct the input from the latent representation.
     """
-    def __init__(self, output_dim=30, depth=3, hidden_dim=64, dropout_rate=0.3, latent_dim=10):
+    def __init__(self, output_dim=30, depth=3, hidden_dim=64, dropout_rate=0.3, latent_dim=10, use_batch_norm=True):
         super(Decoder, self).__init__()
 
         # Hidden layers
@@ -99,7 +99,7 @@ class Decoder(nn.Module):
                 [
                     nn.Dropout(dropout_rate),  # Dropout to reduce overfitting
                     nn.Linear(hidden_dim, hidden_dim),
-                    nn.BatchNorm1d(hidden_dim),
+                    nn.BatchNorm1d(hidden_dim) if use_batch_norm else nn.Identity(),
                     nn.LeakyReLU(),
                 ]
             )
@@ -107,7 +107,7 @@ class Decoder(nn.Module):
         # Decoder structure
         self.body = nn.Sequential(
             nn.Linear(latent_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
+            nn.BatchNorm1d(hidden_dim) if use_batch_norm else nn.Identity(),
             nn.LeakyReLU(),
             *hidden,
         )
@@ -201,7 +201,7 @@ class MultiTaskPredictor(nn.Module):
     forward(z)
         Forward pass through shared layers and task-specific heads.
     """
-    def __init__(self, latent_dim=10, depth=3, hidden_dim=64, dropout_rate=0.3, task_count=2):
+    def __init__(self, latent_dim=10, depth=3, hidden_dim=64, dropout_rate=0.3, task_count=2, use_batch_norm=True):
         super(MultiTaskPredictor, self).__init__()
 
         # Shared layers
@@ -211,7 +211,7 @@ class MultiTaskPredictor(nn.Module):
                 [
                     nn.Dropout(dropout_rate),
                     nn.Linear(hidden_dim, hidden_dim),
-                    nn.BatchNorm1d(hidden_dim),
+                    nn.BatchNorm1d(hidden_dim) if use_batch_norm else nn.Identity(),
                     nn.LeakyReLU(),
                 ]
             )
@@ -219,7 +219,7 @@ class MultiTaskPredictor(nn.Module):
         # Shared body
         self.body = nn.Sequential(
             nn.Linear(latent_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim),
+            nn.BatchNorm1d(hidden_dim) if use_batch_norm else nn.Identity(),
             nn.LeakyReLU(),
             *hidden,
         )
@@ -284,6 +284,8 @@ class HybridVAEMultiTaskModel(nn.Module):
         Factor by which the learning rate will be reduced when the scheduler is triggered (default is 0.1).
     lr_scheduler_patience : int, optional
         Number of validation epochs to wait for improvement before reducing the learning rate (default is 50).
+    use_batch_norm : bool, optional
+        Use batch normalization (default is True).
     Methods
     -------
     forward(x)
@@ -320,10 +322,11 @@ class HybridVAEMultiTaskModel(nn.Module):
                  use_lr_scheduler=True,
                  lr_scheduler_factor=0.1,
                  lr_scheduler_patience=50,
+                 use_batch_norm=True, 
                  ):
         super(HybridVAEMultiTaskModel, self).__init__()
-        self.vae = VAE(input_dim, depth=vae_depth, hidden_dim=vae_hidden_dim, dropout_rate=vae_dropout_rate, latent_dim=latent_dim)
-        self.predictor = MultiTaskPredictor(latent_dim, depth=predictor_depth, hidden_dim=predictor_hidden_dim, dropout_rate=predictor_dropout_rate, task_count=task_count)
+        self.vae = VAE(input_dim, depth=vae_depth, hidden_dim=vae_hidden_dim, dropout_rate=vae_dropout_rate, latent_dim=latent_dim, use_batch_norm=use_batch_norm)
+        self.predictor = MultiTaskPredictor(latent_dim, depth=predictor_depth, hidden_dim=predictor_hidden_dim, dropout_rate=predictor_dropout_rate, task_count=task_count, use_batch_norm=use_batch_norm)
         
         self.input_dim = input_dim
         self.vae_hidden_dim = vae_hidden_dim
@@ -346,6 +349,7 @@ class HybridVAEMultiTaskModel(nn.Module):
         self.use_lr_scheduler = use_lr_scheduler
         self.lr_scheduler_factor = lr_scheduler_factor
         self.lr_scheduler_patience = lr_scheduler_patience
+        self.use_batch_norm = use_batch_norm
 
     def reset_parameters(self, seed=19960816):
         for layer in self.modules():
@@ -803,6 +807,7 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
                  use_lr_scheduler=True,
                  lr_scheduler_factor=0.1,
                  lr_scheduler_patience=50,
+                 use_batch_norm=True, 
                  ):
         super().__init__(input_dim=input_dim, 
                          vae_hidden_dim=vae_hidden_dim, 
@@ -825,6 +830,7 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
                          use_lr_scheduler=use_lr_scheduler,
                          lr_scheduler_factor=lr_scheduler_factor,
                          lr_scheduler_patience=lr_scheduler_patience,
+                         use_batch_norm=use_batch_norm,
                          )
     
     def fit(self, X, y, *args, **kwargs):
