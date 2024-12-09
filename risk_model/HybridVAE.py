@@ -515,13 +515,51 @@ class HybridVAEMultiTaskModel(nn.Module):
         self.use_batch_norm = use_batch_norm
 
     def reset_parameters(self, seed=19960816):
+        torch.manual_seed(seed)  # 固定随机种子
         for layer in self.modules():
-            if isinstance(layer, (nn.Linear, nn.Conv2d)):
-                torch.manual_seed(seed)  # 固定随机种子
+            if isinstance(layer,  nn.Linear):
+                if layer.weight.dim() >= 2:
+                    nonlinearity = 'leaky_relu' if self._is_followed_by_leaky_relu(layer) else 'relu'
+                    nn.init.kaiming_normal_(layer.weight, mode='fan_in', nonlinearity=nonlinearity)
+                else:
+                    nn.init.xavier_uniform_(layer.weight)
+                if layer.bias is not None:
+                    nn.init.zeros_(layer.bias)
+
+            elif isinstance(layer, nn.Conv2d):
                 nn.init.xavier_uniform_(layer.weight)
                 if layer.bias is not None:
                     nn.init.zeros_(layer.bias)
 
+            # Batch normalization layers (special case)
+            elif isinstance(layer, (nn.BatchNorm1d, nn.BatchNorm2d)):
+                nn.init.ones_(layer.weight)
+                nn.init.zeros_(layer.bias)
+
+    def _is_followed_by_leaky_relu(self, layer):
+        """
+        Check if a given layer is immediately followed by a LeakyReLU activation.
+
+        Parameters
+        ----------
+        layer : nn.Module
+            The layer to check.
+
+        Returns
+        -------
+        bool
+            True if the layer is followed by a LeakyReLU activation, False otherwise.
+        """
+        # Get the parent module's children
+        modules = list(self.children())
+        for idx, child in enumerate(modules):
+            # If the current child is the layer, check the next child
+            if child is layer:
+                # Check if the next layer is LeakyReLU
+                if idx + 1 < len(modules) and isinstance(modules[idx + 1], nn.LeakyReLU):
+                    return True
+        return False
+    
     def forward(self, x):
         """
         Forward pass through the complete model.
@@ -549,7 +587,6 @@ class HybridVAEMultiTaskModel(nn.Module):
         task_outputs = self.predictor(z)
         return recon, mu, logvar, z, task_outputs
 
-
     def check_tensor(self, X: torch.Tensor):
         """
         Ensures the input is a tensor and moves it to the correct device.
@@ -573,9 +610,11 @@ class HybridVAEMultiTaskModel(nn.Module):
         else:
             return torch.from_numpy(np.asarray(X, dtype=np.float32)).to(DEVICE)
 
-    def compute_loss(self, recon, x, mu, logvar, task_outputs, y, beta=1.0, gamma_task=1.0, alpha=None, normalize_loss=False):
+    def compute_loss(self, recon, x, mu, logvar, task_outputs, y, 
+                    beta=1.0, gamma_task=1.0, alpha=None, normalize_loss=False, 
+                    dynamic_batch_weights=False, use_weighted_bce=True):
         """
-        Compute total loss for VAE and multi-task predictor.
+        Compute total loss for VAE and multi-task predictor, with support for class balancing.
 
         Parameters
         ----------
@@ -599,6 +638,10 @@ class HybridVAEMultiTaskModel(nn.Module):
             Per-task weights, shape (num_tasks,). Default is uniform weights.
         normalize_loss : bool, optional
             If True, normalize the scale of recon_loss, kl_loss, and task_loss.
+        dynamic_batch_weights : bool, optional
+            If True, calculate class weights dynamically based on batch data.
+        use_weighted_bce : bool, optional
+            If True, use weighted BCE for class balancing (default is True).
 
         Returns
         -------
@@ -619,17 +662,28 @@ class HybridVAEMultiTaskModel(nn.Module):
         kl_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
 
         # Task-specific losses
-        task_loss_fn = nn.BCELoss(reduction='mean')  # Assuming binary tasks
         if alpha is None:
             alpha = torch.ones(len(task_outputs), device=DEVICE)  # Default to uniform weights
 
-        # Clamp task_outputs to [1e-6, 1 - 1e-6] to avoid log(0)
-        task_outputs_clamped = [torch.clamp(output, min=1e-9, max=1-1e-9) for output in task_outputs]
+        task_losses = []
+        for t, task_output in enumerate(task_outputs):
+            # Clamp task outputs for numerical stability
+            task_output_clamped = torch.clamp(task_output, min=1e-9, max=1-1e-9)
 
-        task_losses = [
-            alpha[t] * task_loss_fn(task_outputs_clamped[t], y[:, t].unsqueeze(1))
-            for t in range(len(task_outputs_clamped))
-        ]
+            # Compute class weights if needed
+            if use_weighted_bce:
+                if dynamic_batch_weights:
+                    pos_weight = torch.sum(y[:, t] == 0) / (torch.sum(y[:, t] == 1) + 1e-8)
+                else:
+                    pos_weight = self.global_weights[t]  # Pre-computed global weights
+                task_loss_fn = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+            else:
+                task_loss_fn = nn.BCEWithLogitsLoss()
+
+            # Compute task loss
+            task_loss = alpha[t] * task_loss_fn(task_output_clamped.squeeze(), y[:, t].float())
+            task_losses.append(task_loss)
+
         task_loss = sum(task_losses)
 
         if normalize_loss:
@@ -695,6 +749,14 @@ class HybridVAEMultiTaskModel(nn.Module):
         if torch.isnan(Y).any():
             raise ValueError("Targets (Y) contain NaNs.")
 
+        # Calculate global class weights
+        num_samples, num_tasks = Y.shape
+        class_weights = []
+        for t in range(num_tasks):
+            pos_weight = torch.tensor(torch.sum(Y[:, t] == 0) / (torch.sum(Y[:, t] == 1) + 1e-8), device=DEVICE)
+            class_weights.append(pos_weight)
+        self.global_weights = torch.stack(class_weights)
+
         # Split data into training and validation sets
         n_samples = len(X)
         n_val = int(n_samples * self.validation_split)
@@ -735,6 +797,19 @@ class HybridVAEMultiTaskModel(nn.Module):
                 X_batch = X_train[i:i + self.batch_size]
                 Y_batch = Y_train[i:i + self.batch_size]
 
+                # Combine with the remaining samples if the batch is too small
+                if len(X_batch) <= 2:
+                    if i + self.batch_size < len(X_train):  # 如果有更多的样本，合并到下一个批次
+                        X_batch = torch.cat([X_batch, X_train[i + self.batch_size:i + 2 * self.batch_size]])
+                        Y_batch = torch.cat([Y_batch, Y_train[i + self.batch_size:i + 2 * self.batch_size]])
+                    else:
+                        # 如果没有更多样本，将这批数据直接使用
+                        pass
+
+                # Ensure the batch size is still valid
+                if len(X_batch) <= 2:
+                    continue  # 仍然太小，跳过
+                
                 # Reset gradients
                 vae_optimizer.zero_grad()
                 multitask_optimizer.zero_grad()
@@ -800,8 +875,8 @@ class HybridVAEMultiTaskModel(nn.Module):
             if verbose:
                 iterator.set_postfix({
                     "Train VAE Loss": f"{train_vae_loss:.4f}",
-                    "Train Task Loss": f"{train_task_loss:.4f}",
                     "Val VAE Loss": f"{val_vae_loss:.4f}",
+                    "Train Task Loss": f"{train_task_loss:.4f}",
                     "Val Task Loss": f"{val_task_loss:.4f}"
                 })
             
@@ -872,7 +947,7 @@ class HybridVAEMultiTaskModel(nn.Module):
         plt.plot(train_vae_losses, label='Train VAE Loss')
         plt.plot(val_vae_losses, label='Val VAE Loss')
         plt.xlabel('Epochs (Log Scale)' if use_log_scale else 'Epochs')
-        plt.ylabel('VAE Loss')
+        plt.ylabel('Reconstruction + KL')
         plt.legend()
         plt.title('VAE Loss (Reconstruction + KL)')
         plt.grid()
@@ -884,9 +959,9 @@ class HybridVAEMultiTaskModel(nn.Module):
         plt.plot(train_task_losses, label='Train Task Loss')
         plt.plot(val_task_losses, label='Val Task Loss')
         plt.xlabel('Epochs (Log Scale)' if use_log_scale else 'Epochs')
-        plt.ylabel('Task Loss (BCE)')
+        plt.ylabel('BCE')
         plt.legend()
-        plt.title('Task Loss (BCE)')
+        plt.title('Task Loss (Binary Cross-Entropy)')
         plt.grid()
         if use_log_scale:
             plt.xscale('log')
@@ -1027,7 +1102,7 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
 
         return super().fit(X, y, *args, **kwargs)
     
-    def transform(self, X):
+    def transform(self, X, return_latent_sample=False):
         """
         Transforms the input samples into the latent space.
 
@@ -1035,18 +1110,38 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
         ----------
         X : np.ndarray or torch.Tensor
             Input samples with shape (n_samples, n_features).
+        return_latent_sample : bool, optional
+            If True, returns a sampled latent representation `z` instead of the mean `mu`.
+            Default is False.
 
         Returns
         -------
         Z : np.ndarray
             Latent space representations with shape (n_samples, latent_dim).
+            If `return_latent_sample` is True, returns sampled latent vectors; otherwise, returns the mean.
         """
+        # Input validation
+        if not isinstance(X, (torch.Tensor, np.ndarray)):
+            raise ValueError("Input X must be a torch.Tensor or numpy.ndarray.")
+        if X.ndim != 2:
+            raise ValueError(f"Input X must have shape (n_samples, n_features). Got shape {X.shape}.")
+
         X = self.check_tensor(X).to(DEVICE)
         self.eval()
-        with torch.no_grad():
-            mu, _ = self.vae.encoder(X)
-        return mu.cpu().numpy()
+        results = []
 
+        with torch.no_grad():
+            for i in range(0, X.size(0), self.batch_size):
+                X_batch = X[i:i + self.batch_size]
+                mu, logvar = self.vae.encoder(X_batch)
+                if return_latent_sample:
+                    z = self.vae.reparameterize(mu, logvar)
+                    results.append(z.cpu().numpy())
+                else:
+                    results.append(mu.cpu().numpy())
+
+        return np.vstack(results)
+    
     def sample_latent(self, X, n_samples=1):
         """
         Sample from the latent space using reparameterization trick.
@@ -1092,7 +1187,7 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
 
     def predict_proba(self, X, deterministic=True):
         """
-        Predicts probabilities for each task.
+        Predicts probabilities for each task with optional batch processing.
 
         Parameters
         ----------
@@ -1109,15 +1204,23 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
         """
         X = self.check_tensor(X).to(DEVICE)
         self.eval()  # Ensure model is in evaluation mode
+        results = []
+
         with torch.no_grad():
-            mu, logvar = self.vae.encoder(X)
-            if deterministic:
-                z = mu  # Use latent mean for deterministic predictions
-            else:
-                z = self.vae.reparameterize(mu, logvar)  # Sample from latent space
-            task_outputs = self.predictor(z)
-        probas = torch.cat([out.unsqueeze(0) for out in task_outputs], dim=0)
-        return probas.cpu().numpy()
+            # Process data in batches
+            for i in range(0, X.size(0), self.batch_size):
+                X_batch = X[i:i + self.batch_size]
+                mu, logvar = self.vae.encoder(X_batch)
+                if deterministic:
+                    z = mu  # Use latent mean for deterministic predictions
+                else:
+                    z = self.vae.reparameterize(mu, logvar)  # Sample from latent space
+                task_outputs = self.predictor(z)
+                batch_probas = torch.cat([out.unsqueeze(0) for out in task_outputs], dim=0)
+                results.append(batch_probas)
+
+        # Combine all batch results
+        return torch.cat(results, dim=1).cpu().numpy()
 
 
     def predict(self, X, threshold=0.5):
@@ -1180,10 +1283,10 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
             )
         
         # Convert losses to NumPy arrays
-        return (total_loss.item(),  # Convert scalar tensor to Python float
-                recon_loss.item(),
-                kl_loss.item(),
-                task_loss.item())
+        return (total_loss.item() / len(X),  # Convert scalar tensor to Python float
+                recon_loss.item() / len(X),
+                kl_loss.item() / len(X),
+                task_loss.item() / len(X))
     
     def get_feature_names_out(self, input_features=None):
         """
@@ -1217,8 +1320,6 @@ def is_interactive_environment():
 
     return False  # Not an interactive environment
 
-
-    
 def generate_hidden_dims(hidden_dim, latent_dim, depth, strategy="constant", order="decreasing"):
     """
     Generator for computing dimensions of hidden layers.
