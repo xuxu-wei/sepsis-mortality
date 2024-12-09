@@ -252,7 +252,6 @@ if RUN_MODE=='tuning':
             print(f"Trial failed with error: {e}")
             return -np.inf, -np.inf, np.inf, np.inf
 
-
     # 日志功能：设置 Optuna 的日志级别
     # optuna.logging.set_verbosity(optuna.logging.INFO)
 
@@ -273,12 +272,13 @@ if RUN_MODE=='tuning':
                 for i, pareto_trial in enumerate(pareto_front):
                     print(f"Pareto solution {i}: Values {pareto_trial.values}, Params {pareto_trial.params}")
             else:
-                best_trial = pareto_front[0]  # 选择首选 Pareto 前沿解
-                print(
-                    f"Trial {trial.number}/{N_TRIAL} finished with value: {trial.values} and parameters: {trial.params} | "
-                    f"Current best value: {best_trial.values} and parameters: {best_trial.params} | "
-                    f"Number of Pareto optimal solutions: {len(pareto_front)}"
-                )
+                # best_trial = pareto_front[0]  # 选择首选 Pareto 前沿解
+                # print(
+                #     f"Trial {trial.number}/{N_TRIAL} finished with value: {trial.values} and parameters: {trial.params} | "
+                #     f"Current best value: {best_trial.values} and parameters: {best_trial.params} | "
+                #     f"Number of Pareto optimal solutions: {len(pareto_front)}"
+                # )
+                pass
         else:
             if IN_NOTEBOOK:
                 clear_output(wait=True)  # 清除之前的输出
@@ -290,10 +290,11 @@ if RUN_MODE=='tuning':
                 print(f"Current best parameters: {study.best_params}")
                 print(f"Current best trial: {study.best_trials}")
             else:
-                print(
-                    f"Trial {trial.number}/{N_TRIAL} finished with value: {trial.value} and parameters: {trial.params} | "
-                    f"Current best value: {study.best_value} and parameters: {study.best_params}"
-                )
+                # print(
+                #     f"Trial {trial.number}/{N_TRIAL} finished with value: {trial.value} and parameters: {trial.params} | "
+                #     f"Current best value: {study.best_value} and parameters: {study.best_params}"
+                # )
+                pass
                 
     # 使用 Optuna 优化
     study = optuna.create_study(directions=["maximize", "maximize", "minimize", 'minimize'], sampler=optuna.samplers.NSGAIISampler(seed=20221021))  # 或 "minimize"，取决于评分标准
