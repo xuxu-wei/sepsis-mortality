@@ -729,8 +729,8 @@ class HybridVAEMultiTaskModel(nn.Module):
         task_patience_counter = 0
 
         # Training and validation loss storage
-        train_vae_losses, train_task_losses = [], []
-        val_vae_losses, val_task_losses = [], []
+        train_vae_losses, train_task_losses, train_aucs = [], [], []
+        val_vae_losses, val_task_losses, val_aucs = [], [], []
         
         # Training loop with tqdm
         iterator = range(epochs)
@@ -790,6 +790,7 @@ class HybridVAEMultiTaskModel(nn.Module):
             train_auc_scores /= train_batch_count
             train_vae_losses.append(train_vae_loss)
             train_task_losses.append(train_task_loss)
+            train_aucs.append(train_auc_scores.mean())
 
             # Validation phase
             self.eval()
@@ -830,6 +831,7 @@ class HybridVAEMultiTaskModel(nn.Module):
             val_auc_scores /= val_batch_count
             val_vae_losses.append(val_vae_loss)
             val_task_losses.append(val_task_loss)
+            val_aucs.append(val_auc_scores.mean())
             val_total_loss = val_vae_loss + val_task_loss
 
             # Update progress bar
@@ -871,8 +873,11 @@ class HybridVAEMultiTaskModel(nn.Module):
                 loss_plot_path = None
                 if plot_path:
                     loss_plot_path = os.path.join(plot_path, f"loss_epoch.jpg")
-                self.plot_loss(train_vae_losses, train_task_losses, val_vae_losses, val_task_losses, save_path=loss_plot_path)
-
+                self.plot_loss(train_vae_losses, train_task_losses, 
+                               val_vae_losses, val_task_losses,
+                               train_aucs, val_aucs, 
+                               save_path=loss_plot_path
+                               )
             # Save weights every 500 epochs
             if (epoch + 1) % 500 == 0 and save_weights_path:
                 self.save_model(save_weights_path, epoch + 1)
@@ -885,9 +890,9 @@ class HybridVAEMultiTaskModel(nn.Module):
         return self
 
 
-    def plot_loss(self, train_vae_losses, train_task_losses, val_vae_losses, val_task_losses, save_path=None):
+    def plot_loss(self, train_vae_losses, train_task_losses, val_vae_losses, val_task_losses, train_aucs, val_aucs, save_path=None):
         """
-        Plot training and validation loss curves for VAE and task-specific losses.
+        Plot training and validation loss curves for VAE, task-specific losses, and AUC.
 
         Parameters
         ----------
@@ -899,37 +904,46 @@ class HybridVAEMultiTaskModel(nn.Module):
             List of VAE losses (reconstruction + KL) for the validation set at each epoch.
         val_task_losses : list
             List of task-specific losses (BCE) for the validation set at each epoch.
+        train_aucs : list of np.ndarray
+            AUC scores for each task during training (task averaged).
+        val_aucs : list of np.ndarray
+            AUC scores for each task during validation (task averaged).
         save_path : str or None
             Path to save the plot image. If None, dynamically display in a notebook.
         """
-        plt.figure(figsize=(12, 6))
-
-        # Check if log scale is needed
-        use_log_scale = len(train_vae_losses) > 10000
+        plt.figure(figsize=(15, 12))
 
         # VAE Loss Plot
-        plt.subplot(1, 2, 1)
-        plt.plot(train_vae_losses, label='Train VAE Loss')
-        plt.plot(val_vae_losses, label='Val VAE Loss')
-        plt.xlabel('Epochs (Log Scale)' if use_log_scale else 'Epochs')
+        plt.subplot(3, 1, 1)
+        plt.plot(train_vae_losses, label='Train VAE Loss', linestyle='-')
+        plt.plot(val_vae_losses, label='Val VAE Loss', linestyle='--')
+        plt.xlabel('Epochs')
         plt.ylabel('Reconstruction + KL')
         plt.legend()
         plt.title('VAE Loss (Reconstruction + KL)')
         plt.grid()
-        if use_log_scale:
-            plt.xscale('log')
 
         # Task Loss Plot
-        plt.subplot(1, 2, 2)
-        plt.plot(train_task_losses, label='Train Task Loss')
-        plt.plot(val_task_losses, label='Val Task Loss')
-        plt.xlabel('Epochs (Log Scale)' if use_log_scale else 'Epochs')
+        plt.subplot(3, 1, 2)
+        plt.plot(train_task_losses, label='Train Task Loss', linestyle='-')
+        plt.plot(val_task_losses, label='Val Task Loss', linestyle='--')
+        plt.xlabel('Epochs')
         plt.ylabel('BCE')
         plt.legend()
         plt.title('Task Loss (Binary Cross-Entropy)')
         plt.grid()
-        if use_log_scale:
-            plt.xscale('log')
+
+        # AUC Plot
+        plt.subplot(3, 1, 3)
+        plt.plot(train_aucs, label='Train AUC (Mean)', linestyle='-')
+        plt.plot(val_aucs, label='Val AUC (Mean)', linestyle='--')
+        plt.xlabel('Epochs')
+        plt.ylabel('AUC')
+        plt.legend()
+        plt.title('AUC Scores (Mean Across Tasks)')
+        plt.grid()
+
+        plt.tight_layout()
 
         if save_path:
             plt.savefig(save_path, dpi=360)
@@ -943,9 +957,9 @@ class HybridVAEMultiTaskModel(nn.Module):
                 plt.pause(0.1)
             except ImportError:
                 pass
-        
-        # Close the plot if it was saved, but avoid closing for interactive use
+            
         plt.close()
+
 
     def save_model(self, save_path, epoch):
         """
