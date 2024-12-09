@@ -291,7 +291,7 @@ class MultiTaskPredictor(nn.Module):
     forward(z)
         Forward pass through shared layers and task-specific heads.
     """
-    def __init__(self, latent_dim=10, depth=3, hidden_dim=64, dropout_rate=0.3, task_count=2, use_batch_norm=True):
+    def __init__(self, latent_dim=10, depth=3, hidden_dim=64, task_hidden_dim=64, task_depth=1, dropout_rate=0.3, task_count=2, use_batch_norm=True):
         super(MultiTaskPredictor, self).__init__()
 
         # Shared layers
@@ -314,14 +314,52 @@ class MultiTaskPredictor(nn.Module):
             *hidden,
         )
 
-        # Task-specific output layers
+
+        # Task-specific sub-networks
         self.task_heads = nn.ModuleList([
-            nn.Linear(hidden_dim, 1) for _ in range(task_count)
+            self._build_task_subnetwork(hidden_dim, task_hidden_dim, task_depth, dropout_rate, use_batch_norm)
+            for _ in range(task_count)
         ])
 
+    @staticmethod
+    def _build_task_subnetwork(input_dim, hidden_dim, depth, dropout_rate, use_batch_norm):
+        """
+        Build a task-specific sub-network.
+
+        Parameters
+        ----------
+        input_dim : int
+            Dimension of the input to the sub-network.
+        hidden_dim : int
+            Number of neurons in each hidden layer.
+        depth : int
+            Number of hidden layers in the sub-network.
+        dropout_rate : float
+            Dropout rate for regularization.
+        use_batch_norm : bool
+            Whether to apply batch normalization.
+
+        Returns
+        -------
+        nn.Sequential
+            Task-specific sub-network.
+        """
+        layers = []
+        for d in range(depth):
+            layers.append(nn.Linear(input_dim, hidden_dim))
+            if use_batch_norm:
+                layers.append(nn.BatchNorm1d(hidden_dim))
+            layers.append(nn.LeakyReLU())
+            layers.append(nn.Dropout(dropout_rate))
+            input_dim = hidden_dim
+        # Final task-specific prediction layer
+        layers.append(nn.Linear(hidden_dim, 1))
+        layers.append(nn.Sigmoid())
+        return nn.Sequential(*layers)
+    
     def forward(self, z):
         h = self.body(z)  # Shared feature extraction
-        outputs = [torch.sigmoid(head(h)) for head in self.task_heads]
+        outputs = [head(h) for head in self.task_heads]
         return outputs
 
 
@@ -421,6 +459,8 @@ class HybridVAEMultiTaskModel(nn.Module):
                  latent_dim=10, 
                  predictor_hidden_dim=64, 
                  predictor_depth=1,
+                 task_hidden_dim=64,
+                 task_depth=2,
                  predictor_dropout_rate=0.3, 
                  # training related params for param tuning
                  vae_lr=1e-3, 
@@ -438,8 +478,15 @@ class HybridVAEMultiTaskModel(nn.Module):
                  use_batch_norm=True, 
                  ):
         super(HybridVAEMultiTaskModel, self).__init__()
-        self.vae = VAE(input_dim, depth=vae_depth, hidden_dim=vae_hidden_dim, dropout_rate=vae_dropout_rate, latent_dim=latent_dim, use_batch_norm=use_batch_norm, strategy=layer_strategy)
-        self.predictor = MultiTaskPredictor(latent_dim, depth=predictor_depth, hidden_dim=predictor_hidden_dim, dropout_rate=predictor_dropout_rate, task_count=task_count, use_batch_norm=use_batch_norm)
+        self.vae = VAE(input_dim, 
+                       depth=vae_depth, hidden_dim=vae_hidden_dim, strategy=layer_strategy, # VAE strcture
+                       dropout_rate=vae_dropout_rate, latent_dim=latent_dim, use_batch_norm=use_batch_norm # normalization
+                       )
+        self.predictor = MultiTaskPredictor(latent_dim, 
+                                            depth=predictor_depth, hidden_dim=predictor_hidden_dim, # body strcture
+                                            task_hidden_dim=task_hidden_dim, task_depth=task_depth, task_count=task_count, # task strcture
+                                            dropout_rate=predictor_dropout_rate, use_batch_norm=use_batch_norm # normalization
+                                            )
         
         self.input_dim = input_dim
         self.task_count = task_count
@@ -450,6 +497,8 @@ class HybridVAEMultiTaskModel(nn.Module):
         self.latent_dim = latent_dim
         self.predictor_hidden_dim = predictor_hidden_dim
         self.predictor_depth = predictor_depth
+        self.task_hidden_dim = task_hidden_dim
+        self.task_depth = task_depth
         self.predictor_dropout_rate = predictor_dropout_rate
         self.vae_lr = vae_lr
         self.vae_weight_decay = vae_weight_decay
@@ -921,6 +970,8 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
                  latent_dim=10, 
                  predictor_hidden_dim=64, 
                  predictor_depth=3,
+                 task_hidden_dim=64,
+                 task_depth=2,
                  predictor_dropout_rate=0.3, 
                  # training related params for param tuning
                  vae_lr=1e-3, 
@@ -946,6 +997,8 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
                          latent_dim=latent_dim, 
                          predictor_hidden_dim=predictor_hidden_dim, 
                          predictor_depth=predictor_depth, 
+                         task_hidden_dim=task_hidden_dim,
+                         task_depth=task_depth,
                          predictor_dropout_rate=predictor_dropout_rate, 
                          vae_lr=vae_lr, 
                          vae_weight_decay=vae_weight_decay, 
