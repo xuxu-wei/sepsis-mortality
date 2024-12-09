@@ -354,7 +354,6 @@ class MultiTaskPredictor(nn.Module):
             input_dim = hidden_dim
         # Final task-specific prediction layer
         layers.append(nn.Linear(hidden_dim, 1))
-        layers.append(nn.Sigmoid())
         return nn.Sequential(*layers)
     
     def forward(self, z):
@@ -470,6 +469,7 @@ class HybridVAEMultiTaskModel(nn.Module):
                  alphas=None,
                  beta=1.0, 
                  gamma_task=1.0,
+                 weighted_classify=True,
                  batch_size=200, 
                  validation_split=0.3, 
                  use_lr_scheduler=True,
@@ -507,6 +507,7 @@ class HybridVAEMultiTaskModel(nn.Module):
         self.alphas = alphas
         self.beta = beta
         self.gamma_task = gamma_task
+        self.weighted_classify = weighted_classify
         self.batch_size = batch_size
         self.validation_split = validation_split
         self.use_lr_scheduler = use_lr_scheduler
@@ -560,7 +561,7 @@ class HybridVAEMultiTaskModel(nn.Module):
                     return True
         return False
     
-    def forward(self, x):
+    def forward(self, x, return_probs=True):
         """
         Forward pass through the complete model.
 
@@ -568,23 +569,32 @@ class HybridVAEMultiTaskModel(nn.Module):
         ----------
         x : torch.Tensor
             Input tensor with shape (batch_size, input_dim).
+        return_probs : bool, optional
+            If True, apply sigmoid activation to task-specific outputs to return probabilities.
+            If False, return raw logits for task-specific outputs.
 
         Returns
         -------
-        torch.Tensor
+        recon : torch.Tensor
             Reconstructed tensor with shape (batch_size, input_dim).
-        torch.Tensor
+        mu : torch.Tensor
             Latent mean tensor with shape (batch_size, latent_dim).
-        torch.Tensor
+        logvar : torch.Tensor
             Latent log variance tensor with shape (batch_size, latent_dim).
-        torch.Tensor
+        z : torch.Tensor
             Latent representation tensor with shape (batch_size, latent_dim).
-        list of torch.Tensor
-            List of task-specific prediction tensors, each with shape (batch_size, 1).
+        task_outputs : list of torch.Tensor
+            List of task-specific outputs (logits or probabilities), each with shape (batch_size, 1).
         """
         x = self.check_tensor(x).to(DEVICE)
         recon, mu, logvar, z = self.vae(x)
-        task_outputs = self.predictor(z)
+        task_logits = self.predictor(z)  # Get logits
+
+        if return_probs:
+            task_outputs = [torch.sigmoid(logit) for logit in task_logits]  # Convert logits to probabilities
+        else:
+            task_outputs = task_logits  # Return raw logits
+
         return recon, mu, logvar, z, task_outputs
 
     def check_tensor(self, X: torch.Tensor):
@@ -753,7 +763,7 @@ class HybridVAEMultiTaskModel(nn.Module):
         num_samples, num_tasks = Y.shape
         class_weights = []
         for t in range(num_tasks):
-            pos_weight = torch.tensor(torch.sum(Y[:, t] == 0) / (torch.sum(Y[:, t] == 1) + 1e-8), device=DEVICE)
+            pos_weight = (torch.sum(Y[:, t] == 0) / (torch.sum(Y[:, t] == 1) + 1e-8)).clone().detach().to(DEVICE)
             class_weights.append(pos_weight)
         self.global_weights = torch.stack(class_weights)
 
@@ -815,12 +825,13 @@ class HybridVAEMultiTaskModel(nn.Module):
                 multitask_optimizer.zero_grad()
 
                 # Forward pass
-                recon, mu, logvar, z, task_outputs = self(X_batch)
+                recon, mu, logvar, z, task_outputs = self(X_batch, return_probs=False)
 
                 # Compute loss
                 total_loss, recon_loss, kl_loss, task_loss = self.compute_loss(
                     recon, X_batch, mu, logvar, task_outputs, Y_batch, 
-                    beta=self.beta, gamma_task=self.gamma_task, alpha=self.alphas
+                    beta=self.beta, gamma_task=self.gamma_task, alpha=self.alphas,
+                    use_weighted_bce=self.weighted_classify
                 )
 
                 # Backward pass and optimization
@@ -848,7 +859,7 @@ class HybridVAEMultiTaskModel(nn.Module):
                     Y_batch = Y_val[i:i + self.batch_size]
 
                     # Forward pass
-                    recon, mu, logvar, z, task_outputs = self(X_batch)
+                    recon, mu, logvar, z, task_outputs = self(X_batch, return_probs=False)
 
                     # Compute validation losses
                     total_loss, recon_loss, kl_loss, task_loss = self.compute_loss(
@@ -1056,6 +1067,7 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
                  alphas=None,
                  beta=1.0, 
                  gamma_task=1.0,
+                 weighted_classify=True,
                  batch_size=200, 
                  validation_split=0.3, 
                  use_lr_scheduler=True,
@@ -1082,6 +1094,7 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
                          alphas=alphas,
                          beta=beta,
                          gamma_task=gamma_task,
+                         weighted_classify=weighted_classify,
                          batch_size=batch_size,
                          validation_split=validation_split,
                          use_lr_scheduler=use_lr_scheduler,
@@ -1276,7 +1289,7 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
         self.eval()
         # Forward pass
         with torch.no_grad():
-            recon, mu, logvar, z, task_outputs = self(X)
+            recon, mu, logvar, z, task_outputs = self(X, return_probs=False)
             total_loss, recon_loss, kl_loss, task_loss = self.compute_loss(
                 recon, X, mu, logvar, task_outputs, Y, 
                 beta=self.beta, gamma_task=self.gamma_task, alpha=self.alphas, normalize_loss=False
