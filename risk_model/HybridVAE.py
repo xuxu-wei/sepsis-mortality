@@ -731,7 +731,7 @@ class HybridVAEMultiTaskModel(nn.Module):
         # Training and validation loss storage
         train_vae_losses, train_task_losses = [], []
         val_vae_losses, val_task_losses = [], []
-
+        
         # Training loop with tqdm
         iterator = range(epochs)
         if verbose:  # 控制进度条显示
@@ -742,6 +742,7 @@ class HybridVAEMultiTaskModel(nn.Module):
             train_vae_loss = 0.0
             train_task_loss = 0.0
             train_auc_scores = np.zeros(self.task_count)
+            train_batch_count = 0
             for i in range(0, len(X_train), self.batch_size):
                 X_batch = X_train[i:i + self.batch_size]
                 Y_batch = Y_train[i:i + self.batch_size]
@@ -781,11 +782,12 @@ class HybridVAEMultiTaskModel(nn.Module):
                 train_vae_loss += (recon_loss.item() + kl_loss.item())
                 train_task_loss += task_loss.item()
                 train_auc_scores += np.array(auc_scores)
+                train_batch_count += 1
 
             # Normalize training losses by the number of batches
             train_vae_loss /= len(X_train)
             train_task_loss /= len(X_train)
-            train_auc_scores /= (len(X_train) // self.batch_size)
+            train_auc_scores /= train_batch_count
             train_vae_losses.append(train_vae_loss)
             train_task_losses.append(train_task_loss)
 
@@ -794,10 +796,14 @@ class HybridVAEMultiTaskModel(nn.Module):
             val_vae_loss = 0.0
             val_task_loss = 0.0
             val_auc_scores = np.zeros(self.task_count)
+            val_batch_count = 0
             with torch.no_grad():
                 for i in range(0, len(X_val), self.batch_size):
                     X_batch = X_val[i:i + self.batch_size]
                     Y_batch = Y_val[i:i + self.batch_size]
+
+                    if len(X_batch) <= 2:  # Skip very small batches
+                        continue
 
                     # Forward pass
                     recon, mu, logvar, z, task_outputs = self(X_batch)
@@ -812,6 +818,7 @@ class HybridVAEMultiTaskModel(nn.Module):
                     val_vae_loss += (recon_loss.item() + kl_loss.item())
                     val_task_loss += task_loss.item()
                     val_auc_scores += np.array(auc_scores)
+                    val_batch_count += 1
 
             if self.use_lr_scheduler:
                 vae_scheduler.step(val_vae_loss)  # 调用时需传入验证损失
@@ -820,7 +827,7 @@ class HybridVAEMultiTaskModel(nn.Module):
             # Normalize validation losses by the number of batches
             val_vae_loss /= len(X_val)
             val_task_loss /= len(X_val)
-            val_auc_scores /= (len(X_val) // self.batch_size)
+            val_auc_scores /= val_batch_count
             val_vae_losses.append(val_vae_loss)
             val_task_losses.append(val_task_loss)
             val_total_loss = val_vae_loss + val_task_loss
@@ -831,8 +838,8 @@ class HybridVAEMultiTaskModel(nn.Module):
                     "Train VAE Loss": f"{train_vae_loss:.4f}",
                     "Val VAE Loss": f"{val_vae_loss:.4f}",
 
-                    "Train Task Loss": f"{train_task_loss:.4f}",
-                    "Val Task Loss": f"{val_task_loss:.4f}",
+                    # "Train Task Loss": f"{train_task_loss:.4f}",
+                    # "Val Task Loss": f"{val_task_loss:.4f}",
 
                     "Train AUC": f"{train_auc_scores.mean():.4f}",
                     "Val AUC": f"{val_auc_scores.mean():.4f}"
@@ -1176,7 +1183,7 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
                 task_outputs = self.predictor(z)
                 batch_probas = torch.cat([out.unsqueeze(0) for out in task_outputs], dim=0)
                 results.append(batch_probas)
-                
+
         # Combine all batch results
         return torch.cat(results, dim=1).cpu().numpy()
     
