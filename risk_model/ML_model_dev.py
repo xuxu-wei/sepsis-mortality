@@ -70,7 +70,7 @@ base_estimators = [('LR', LogisticRegression(penalty='l2', random_state=19960816
                    ('KNN', KNeighborsClassifier()),
                    ('SVM', SVC(probability=True, random_state=19960816)),
                    ('RF', RandomForestClassifier(max_depth=np.log2(X.shape[1]), bootstrap=True, n_jobs=-1, random_state=19960816)),
-                   ('XGB', XGBClassifier(n_estimators=100, n_jobs=-1, device=DEVICE, random_state=19960816))
+                #    ('XGB', XGBClassifier(n_estimators=100, n_jobs=-1, device=DEVICE, random_state=19960816))
                   ]
 
 # stacking of base models
