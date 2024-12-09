@@ -13,53 +13,83 @@ DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 class Encoder(nn.Module):
     """
-    Encoder network for VAE.
+    Encoder network for Variational Autoencoder (VAE).
 
     Parameters
     ----------
-    input_dim : int, optional
-        Dimension of the input data (default is 30).
+    input_dim : int
+        Dimension of the input data (typically same as the input feature dimension).
     depth : int, optional
         Number of hidden layers in the encoder (default is 3).
     hidden_dim : int, optional
-        Number of neurons in each hidden layer (default is 64).
+        Number of neurons in the first hidden layer (default is 64).
     dropout_rate : float, optional
-        Dropout rate for regularization (default is 0.3).
+        Dropout rate for regularization in the hidden layers (default is 0.3).
     latent_dim : int, optional
         Dimension of the latent space (default is 10).
+    use_batch_norm : bool, optional
+        Whether to apply batch normalization to hidden layers (default is True).
+    strategy : str, optional
+        Strategy for scaling hidden layer dimensions:
+        - "constant" or "c": All hidden layers have the same width.
+        - "linear" or "l": Linearly decrease the width from `hidden_dim` to `latent_dim`.
+        - "geometric" or "g": Geometrically decrease the width from `hidden_dim` to `latent_dim`.
+        Default is "linear".
+
+    Attributes
+    ----------
+    body : nn.Sequential
+        Sequential container for the encoder's hidden layers.
+    latent_mu : nn.Linear
+        Linear layer mapping the final hidden layer to the latent space mean.
+    latent_logvar : nn.Linear
+        Linear layer mapping the final hidden layer to the latent space log-variance.
 
     Methods
     -------
     forward(x)
-        Forward pass to compute latent mean and log variance.
+        Perform a forward pass through the encoder, computing the latent mean (`mu`) and log-variance (`logvar`).
+
+    Notes
+    -----
+    - The hidden layer dimensions are dynamically generated using the `generate_hidden_dims` function.
+    - The final layer dimensions are mapped to the latent space using `latent_mu` and `latent_logvar`.
+    - If `depth=0`, the encoder contains only the input layer and no additional hidden layers.
     """
-    def __init__(self, input_dim=30, depth=3, hidden_dim=64, dropout_rate=0.3, latent_dim=10, use_batch_norm=True):
+    def __init__(self, input_dim, depth=3, hidden_dim=64, dropout_rate=0.3, latent_dim=10, use_batch_norm=True, strategy="linear"):
         super(Encoder, self).__init__()
 
-        # Hidden layers
-        hidden = []
-        for d in range(depth):
-            hidden.extend(
-                [
-                    nn.Dropout(dropout_rate),  # Dropout to reduce overfitting
-                    nn.Linear(hidden_dim, hidden_dim),
-                    nn.BatchNorm1d(hidden_dim) if use_batch_norm else nn.Identity(),
-                    nn.LeakyReLU(),
-                ]
-            )
+        # Generate hidden dimensions for encoder
+        dims_gen = list(generate_hidden_dims(hidden_dim, latent_dim, depth, strategy=strategy, order="decreasing"))
 
-        # Encoder structure
-        self.body = nn.Sequential(
-            nn.Linear(input_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim) if use_batch_norm else nn.Identity(),
-            nn.LeakyReLU(),
-            *hidden,
-        )
+        # Build layers
+        layers = []
+        layers.append(nn.Linear(input_dim, hidden_dim))
+        if use_batch_norm:
+            layers.append(nn.BatchNorm1d(hidden_dim))
+        layers.append(nn.LeakyReLU())
+        layers.append(nn.Dropout(dropout_rate))
 
+        # set default for depth=0
+        hidden_in_dim = hidden_dim
+        hidden_out_dim = hidden_dim
+        for hidden_in_dim, hidden_out_dim in dims_gen:
+            layers.append(nn.Linear(hidden_in_dim, hidden_out_dim))
+            if use_batch_norm:
+                layers.append(nn.BatchNorm1d(hidden_out_dim))
+            layers.append(nn.LeakyReLU())
+            layers.append(nn.Dropout(dropout_rate))
+        
+        self.body = nn.Sequential(*layers)
         # Latent space: mean and log variance
-        self.latent_mu = nn.Linear(hidden_dim, latent_dim)
-        self.latent_logvar = nn.Linear(hidden_dim, latent_dim)
-
+        self.latent_mu = nn.Linear(hidden_out_dim, latent_dim)
+        self.latent_logvar = nn.Linear(hidden_out_dim, latent_dim)
+        
+        # Extract hidden dimensions from the body
+        self.dim_list = [
+            (m.in_features, m.out_features) for m in self.body if isinstance(m, nn.Linear)
+        ] + [(hidden_out_dim, latent_dim)]
+        
     def forward(self, x):
         h = self.body(x)
         mu = self.latent_mu(h)
@@ -69,56 +99,91 @@ class Encoder(nn.Module):
 
 class Decoder(nn.Module):
     """
-    Decoder network for VAE.
+    Decoder network for Variational Autoencoder (VAE).
 
     Parameters
     ----------
-    output_dim : int, optional
-        Dimension of the reconstructed output (default is 30).
-    depth : int, optional
-        Number of hidden layers in the decoder (default is 3).
-    hidden_dim : int, optional
-        Number of neurons in each hidden layer (default is 64).
+    dim_list : list of tuple
+        List of tuples representing the input and output dimensions for each layer.
+        The list should start with the latent space dimensions and end with the output space dimensions.
+        For example:
+        [(latent_dim, hidden_dim_1), (hidden_dim_1, hidden_dim_2), ..., (hidden_dim_last, output_dim)]
+        - `latent_dim` : Dimension of the latent space.
+        - `output_dim` : Dimension of the reconstructed input space (same as the input dimension in Encoder).
+        The length of `dim_list` determines the number of layers in the decoder.
     dropout_rate : float, optional
-        Dropout rate for regularization (default is 0.3).
-    latent_dim : int, optional
-        Dimension of the latent space (default is 10).
+        Dropout rate for regularization in the hidden layers (default is 0.3).
+    use_batch_norm : bool, optional
+        Whether to apply batch normalization to hidden layers (default is True).
+
+    Attributes
+    ----------
+    body : nn.Sequential
+        Sequential container for the hidden layers of the decoder.
+    output_layer : nn.Linear
+        Linear layer mapping the final hidden layer to the reconstructed input space.
 
     Methods
     -------
     forward(z)
-        Forward pass to reconstruct the input from the latent representation.
+        Perform a forward pass through the decoder, reconstructing the input from the latent representation.
+
+    Notes
+    -----
+    - The `dim_list` parameter allows complete flexibility in defining the decoder structure.
+    - The hidden layers are created using the dimensions specified in `dim_list`, except the final tuple, 
+      which is used to define `output_layer`.
+    - If `use_batch_norm=True`, batch normalization is applied after each hidden layer.
+
+    Examples
+    --------
+    # Example usage
+    dim_list = [(10, 64), (64, 128), (128, 256), (256, 30)]  # latent_dim=10, output_dim=30
+    decoder = Decoder(dim_list=dim_list, dropout_rate=0.3, use_batch_norm=True)
+    z = torch.randn((32, 10))  # Batch size 32, latent space dimension 10
+    reconstructed_x = decoder(z)
+    print(reconstructed_x.shape)  # Output: torch.Size([32, 30])
     """
-    def __init__(self, output_dim=30, depth=3, hidden_dim=64, dropout_rate=0.3, latent_dim=10, use_batch_norm=True):
+    def __init__(self, dim_list, dropout_rate=0.3, use_batch_norm=True):
         super(Decoder, self).__init__()
+        
+        # Input validation
+        if not isinstance(dim_list, list) or len(dim_list) < 2:
+            raise ValueError("dim_list must be a list with at least two tuples [(latent_dim, hidden_dim), ..., (hidden_dim_last, output_dim)]")
+        if not all(isinstance(t, tuple) and len(t) == 2 for t in dim_list):
+            raise ValueError("Each element of dim_list must be a tuple (input_dim, output_dim)")
 
-        # Hidden layers
-        hidden = []
-        for d in range(depth):
-            hidden.extend(
-                [
-                    nn.Dropout(dropout_rate),  # Dropout to reduce overfitting
-                    nn.Linear(hidden_dim, hidden_dim),
-                    nn.BatchNorm1d(hidden_dim) if use_batch_norm else nn.Identity(),
-                    nn.LeakyReLU(),
-                ]
-            )
+        # Build hidden layers
+        layers = []
+        for d, (input_dim, output_dim) in enumerate(dim_list):
+            if d < len(dim_list) - 1:  # All layers except the last one
+                layers.append(nn.Linear(input_dim, output_dim))
+                if use_batch_norm:
+                    layers.append(nn.BatchNorm1d(output_dim))
+                layers.append(nn.LeakyReLU())
+                layers.append(nn.Dropout(dropout_rate))
 
-        # Decoder structure
-        self.body = nn.Sequential(
-            nn.Linear(latent_dim, hidden_dim),
-            nn.BatchNorm1d(hidden_dim) if use_batch_norm else nn.Identity(),
-            nn.LeakyReLU(),
-            *hidden,
-        )
+        self.body = nn.Sequential(*layers)
 
         # Output layer
-        self.output_layer = nn.Linear(hidden_dim, output_dim)
+        self.output_layer = nn.Linear(input_dim, output_dim)
 
     def forward(self, z):
-        h = self.body(z)  # where z is the latent feature
-        recon = self.output_layer(h)
-        return recon
+        """
+        Forward pass through the decoder.
+
+        Parameters
+        ----------
+        z : torch.Tensor
+            Latent representation, shape (batch_size, latent_dim).
+
+        Returns
+        -------
+        torch.Tensor
+            Reconstructed input, shape (batch_size, output_dim).
+        """
+        h = self.body(z)
+        return self.output_layer(h)
     
 
 class VAE(nn.Module):
@@ -130,25 +195,50 @@ class VAE(nn.Module):
     input_dim : int, optional
         Dimension of the input data (default is 30).
     depth : int, optional
-        Number of hidden layers in encoder/decoder (default is 3).
+        Number of hidden layers in both the encoder and decoder (default is 3).
     hidden_dim : int, optional
-        Number of neurons in each hidden layer (default is 64).
+        Number of neurons in the first hidden layer of the encoder/decoder (default is 64).
     dropout_rate : float, optional
-        Dropout rate for regularization (default is 0.3).
+        Dropout rate for regularization in the encoder/decoder hidden layers (default is 0.3).
     latent_dim : int, optional
         Dimension of the latent space (default is 10).
+    use_batch_norm : bool, optional
+        Whether to apply batch normalization to the encoder/decoder hidden layers (default is True).
+    strategy : str, optional
+        Strategy for scaling hidden layer dimensions in the encoder/decoder:
+        - "constant" or "c": All hidden layers have the same width.
+        - "linear" or "l": Linearly increase/decrease the width.
+        - "geometric" or "g": Geometrically increase/decrease the width.
+        Default is "linear".
+
+    Attributes
+    ----------
+    encoder : Encoder
+        The encoder network for mapping input data to latent space.
+    decoder : Decoder
+        The decoder network for reconstructing input data from latent space.
 
     Methods
     -------
     forward(x)
-        Forward pass to encode, sample, and decode the input.
+        Perform a forward pass through the VAE:
+        1. Encode the input to obtain `mu` and `logvar` (latent mean and log-variance).
+        2. Reparameterize to sample latent vectors.
+        3. Decode the sampled latent vectors to reconstruct the input.
     reparameterize(mu, logvar)
-        Reparameterization trick for sampling latent space.
+        Apply the reparameterization trick to sample latent vectors from `mu` and `logvar`.
+
+    Notes
+    -----
+    - The encoder and decoder share the same `depth`, `hidden_dim`, `dropout_rate`, `use_batch_norm`, and `strategy` parameters.
+    - The latent space sampling uses the reparameterization trick: `z = mu + std * eps`, where `std = exp(0.5 * logvar)` and `eps ~ N(0, I)`.
+    - The reconstructed output has the same dimension as the input.
     """
-    def __init__(self, input_dim=30, depth=3, hidden_dim=64, dropout_rate=0.3, latent_dim=10, use_batch_norm=True):
+    def __init__(self, input_dim=30, depth=3, hidden_dim=64, dropout_rate=0.3, latent_dim=10, use_batch_norm=True, strategy='linear'):
         super(VAE, self).__init__()
-        self.encoder = Encoder(input_dim, depth, hidden_dim, dropout_rate, latent_dim, use_batch_norm)
-        self.decoder = Decoder(input_dim, depth, hidden_dim, dropout_rate, latent_dim, use_batch_norm)
+        self.encoder = Encoder(input_dim, depth, hidden_dim, dropout_rate, latent_dim, use_batch_norm, strategy=strategy)
+        dim_list = [(out_dim, in_dim) for (in_dim, out_dim) in self.encoder.dim_list[::-1]] # inverse encoder layer structure
+        self.decoder = Decoder(dim_list, dropout_rate, use_batch_norm)
     
     @staticmethod
     def reparameterize(mu, logvar):
@@ -237,70 +327,94 @@ class MultiTaskPredictor(nn.Module):
 
 class HybridVAEMultiTaskModel(nn.Module):
     """
-    Complete model combining VAE and Multi-Task Predictor.
+    Hybrid Variational Autoencoder (VAE) and Multi-Task Predictor Model.
+
+    This model combines a Variational Autoencoder (VAE) for dimensionality reduction
+    with a Multi-Task Predictor for performing parallel predictive tasks.
 
     Parameters
     ----------
     input_dim : int, optional
         Dimension of the input data (default is 30).
-    vae_hidden_dim : int, optional
-        Number of neurons in each hidden layer of the VAE (default is 64).
-    vae_depth : int, optional
-        Number of hidden layers in the VAE (default is 3).
-    vae_dropout_rate : float, optional
-        Dropout rate for VAE hidden layers to prevent overfitting (default is 0.3).
-    latent_dim : int, optional
-        Dimension of the latent space for the VAE (default is 10).
-    predictor_hidden_dim : int, optional
-        Number of neurons in each hidden layer of the Multi-Task Predictor (default is 64).
-    predictor_depth : int, optional
-        Number of shared hidden layers in the Multi-Task Predictor (default is 3).
-    predictor_dropout_rate : float, optional
-        Dropout rate for Multi-Task Predictor hidden layers to prevent overfitting (default is 0.3).
     task_count : int, optional
         Number of parallel prediction tasks (default is 2).
+    layer_strategy : str, optional
+        Strategy for scaling hidden layer dimensions in both the VAE and Multi-Task Predictor:
+        - "constant" or "c": All hidden layers have the same width.
+        - "linear" or "l": Linearly increase/decrease the width.
+        - "geometric" or "g": Geometrically increase/decrease the width.
+        Default is "linear".
+    vae_hidden_dim : int, optional
+        Number of neurons in the first hidden layer of the VAE encoder/decoder (default is 64).
+    vae_depth : int, optional
+        Number of hidden layers in the VAE encoder/decoder (default is 1).
+    vae_dropout_rate : float, optional
+        Dropout rate for VAE hidden layers (default is 0.3).
+    latent_dim : int, optional
+        Dimension of the latent space in the VAE (default is 10).
+    predictor_hidden_dim : int, optional
+        Number of neurons in the first hidden layer of the Multi-Task Predictor (default is 64).
+    predictor_depth : int, optional
+        Number of shared hidden layers in the Multi-Task Predictor (default is 1).
+    predictor_dropout_rate : float, optional
+        Dropout rate for Multi-Task Predictor hidden layers (default is 0.3).
     vae_lr : float, optional
         Learning rate for the VAE optimizer (default is 1e-3).
     vae_weight_decay : float, optional
         Weight decay (L2 regularization) for the VAE optimizer (default is 1e-3).
     multitask_lr : float, optional
-        Learning rate for the MultiTask predictor optimizer (default is 1e-3).
+        Learning rate for the MultiTask Predictor optimizer (default is 1e-3).
     multitask_weight_decay : float, optional
-        Weight decay (L2 regularization) for the MultiTask predictor optimizer (default is 1e-3).
+        Weight decay (L2 regularization) for the MultiTask Predictor optimizer (default is 1e-3).
     alphas : list or torch.Tensor, optional
-        Per-task weights for the task loss term, shape (num_tasks,). Default is uniform weights (1 for all tasks).
+        Per-task weights for the task loss term, shape `(num_tasks,)`. Default is uniform weights (1 for all tasks).
     beta : float, optional
         Weight of the KL divergence term in the VAE loss (default is 1.0).
     gamma_task : float, optional
         Weight of the task loss term in the total loss (default is 1.0).
     batch_size : int, optional
-        Batch size for training (default is 32).
+        Batch size for training (default is 200).
     validation_split : float, optional
-        Fraction of the data to use for validation (default is 0.2).
+        Fraction of the data to use for validation (default is 0.3).
     use_lr_scheduler : bool, optional
-        Whether to enable ReduceLROnPlateau learning rate scheduler for both VAE and Multi-Task predictors
-        based on validation losses (default is True). If False, no learning rate adjustments will be made.
+        Whether to enable learning rate schedulers for both the VAE and Multi-Task Predictor (default is True).
     lr_scheduler_factor : float, optional
-        Factor by which the learning rate will be reduced when the scheduler is triggered (default is 0.1).
+        Factor by which the learning rate is reduced when the scheduler is triggered (default is 0.1).
     lr_scheduler_patience : int, optional
-        Number of validation epochs to wait for improvement before reducing the learning rate (default is 50).
+        Number of epochs to wait for validation loss improvement before triggering the scheduler (default is 50).
     use_batch_norm : bool, optional
-        Use batch normalization (default is True).
-    Methods
-    -------
-    forward(x)
-        Forward pass through VAE and Multi-Task Predictor.
+        Whether to apply batch normalization to hidden layers in both the VAE and Multi-Task Predictor (default is True).
 
     Attributes
     ----------
     vae : VAE
-        Variational Autoencoder module consisting of an encoder and decoder.
+        Variational Autoencoder for dimensionality reduction.
     predictor : MultiTaskPredictor
-        Multi-task prediction module that takes the latent representation as input
-        and outputs predictions for multiple tasks.
+        Multi-task prediction module for performing parallel predictive tasks.
+
+    Methods
+    -------
+    forward(x)
+        Forward pass through the VAE and Multi-Task Predictor.
+    compute_loss(recon, x, mu, logvar, task_outputs, y, ...)
+        Compute the total loss, combining VAE loss (reconstruction + KL divergence) and task-specific loss.
+    fit(X, Y, ...)
+        Train the model on the input data `X` and labels `Y`.
+    plot_loss(...)
+        Plot training and validation loss curves for VAE and task-specific losses.
+    save_model(...)
+        Save the model weights.
+
+    Notes
+    -----
+    - The encoder and decoder of the VAE, as well as the Multi-Task Predictor, use dynamically generated hidden layers
+      based on the specified depth, strategy, and hidden dimensions.
+    - Task-specific outputs in the Multi-Task Predictor use sigmoid activation for binary classification.
     """
     def __init__(self, 
                  input_dim=30, 
+                 task_count=2,
+                 layer_strategy='linear',
                  vae_hidden_dim=64, 
                  vae_depth=1,
                  vae_dropout_rate=0.3, 
@@ -308,7 +422,6 @@ class HybridVAEMultiTaskModel(nn.Module):
                  predictor_hidden_dim=64, 
                  predictor_depth=1,
                  predictor_dropout_rate=0.3, 
-                 task_count=2,
                  # training related params for param tuning
                  vae_lr=1e-3, 
                  vae_weight_decay=1e-3, 
@@ -325,10 +438,12 @@ class HybridVAEMultiTaskModel(nn.Module):
                  use_batch_norm=True, 
                  ):
         super(HybridVAEMultiTaskModel, self).__init__()
-        self.vae = VAE(input_dim, depth=vae_depth, hidden_dim=vae_hidden_dim, dropout_rate=vae_dropout_rate, latent_dim=latent_dim, use_batch_norm=use_batch_norm)
+        self.vae = VAE(input_dim, depth=vae_depth, hidden_dim=vae_hidden_dim, dropout_rate=vae_dropout_rate, latent_dim=latent_dim, use_batch_norm=use_batch_norm, strategy=layer_strategy)
         self.predictor = MultiTaskPredictor(latent_dim, depth=predictor_depth, hidden_dim=predictor_hidden_dim, dropout_rate=predictor_dropout_rate, task_count=task_count, use_batch_norm=use_batch_norm)
         
         self.input_dim = input_dim
+        self.task_count = task_count
+        self.layer_strategy = layer_strategy
         self.vae_hidden_dim = vae_hidden_dim
         self.vae_depth = vae_depth
         self.vae_dropout_rate = vae_dropout_rate
@@ -336,7 +451,6 @@ class HybridVAEMultiTaskModel(nn.Module):
         self.predictor_hidden_dim = predictor_hidden_dim
         self.predictor_depth = predictor_depth
         self.predictor_dropout_rate = predictor_dropout_rate
-        self.task_count = task_count
         self.vae_lr = vae_lr
         self.vae_weight_decay = vae_weight_decay
         self.multitask_lr = multitask_lr
@@ -762,31 +876,45 @@ class HybridVAEMultiTaskModel(nn.Module):
 
 class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, ClassifierMixin, TransformerMixin):
     """
-    A hybrid model combining VAE and Multi-Task Predictor with scikit-learn compatible interface.
+    Scikit-learn compatible wrapper for the Hybrid VAE and Multi-Task Predictor.
+
+    This class extends the `HybridVAEMultiTaskModel` by adding methods compatible with scikit-learn's API,
+    such as `fit`, `transform`, `predict`, and `score`.
 
     Methods
     -------
     fit(X, Y, *args, **kwargs)
-        Fits the model to the data.
+        Fit the model to input features `X` and targets `Y`.
     transform(X)
-        Transforms input samples into latent space.
+        Transform input samples into latent space representations.
     inverse_transform(Z)
-        Reconstructs samples from latent space parameters.
-    predict_proba(X)
-        Predicts probabilities for each task.
+        Reconstruct samples from latent space representations.
+    predict_proba(X, deterministic=True)
+        Predict probabilities for each task, either deterministically (using the latent mean) or stochastically.
     predict(X, threshold=0.5)
-        Predicts binary classifications for each task based on a threshold.
-    score(X, Y)
-        Computes AUC scores for each task.
+        Predict binary classifications for each task based on a threshold.
+    score(X, Y, ...)
+        Compute evaluation metrics (e.g., AUC) for each task on the given dataset.
+    eval_loss(X, Y)
+        Compute the total loss, including reconstruction, KL divergence, and task-specific losses.
+    get_feature_names_out(input_features=None)
+        Get output feature names for the latent space.
 
     Attributes
     ----------
     feature_names_in_ : list of str
-        Feature names for input data.
-    """
+        Feature names for the input data. Automatically populated when `X` is a pandas DataFrame during `fit`.
 
+    Notes
+    -----
+    - This wrapper is designed to integrate seamlessly with scikit-learn pipelines and workflows.
+    - The `transform` method maps input data into the latent space, which can be used for dimensionality reduction.
+    - The `predict` and `predict_proba` methods support multi-task binary classification.
+    """
     def __init__(self, 
                  input_dim=30, 
+                 task_count=2,
+                 layer_strategy='linear',
                  vae_hidden_dim=64, 
                  vae_depth=3,
                  vae_dropout_rate=0.3, 
@@ -794,7 +922,6 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
                  predictor_hidden_dim=64, 
                  predictor_depth=3,
                  predictor_dropout_rate=0.3, 
-                 task_count=2,
                  # training related params for param tuning
                  vae_lr=1e-3, 
                  vae_weight_decay=1e-3, 
@@ -811,6 +938,8 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
                  use_batch_norm=True, 
                  ):
         super().__init__(input_dim=input_dim, 
+                         task_count=task_count,
+                         layer_strategy=layer_strategy,
                          vae_hidden_dim=vae_hidden_dim, 
                          vae_depth=vae_depth, 
                          vae_dropout_rate=vae_dropout_rate, 
@@ -818,7 +947,6 @@ class HybridVAEMultiTaskSklearn(HybridVAEMultiTaskModel, BaseEstimator, Classifi
                          predictor_hidden_dim=predictor_hidden_dim, 
                          predictor_depth=predictor_depth, 
                          predictor_dropout_rate=predictor_dropout_rate, 
-                         task_count=task_count,
                          vae_lr=vae_lr, 
                          vae_weight_decay=vae_weight_decay, 
                          multitask_lr=multitask_lr,
@@ -1035,3 +1163,58 @@ def is_interactive_environment():
         pass  # IPython not installed
 
     return False  # Not an interactive environment
+
+
+    
+def generate_hidden_dims(hidden_dim, latent_dim, depth, strategy="constant", order="decreasing"):
+    """
+    Generator for computing dimensions of hidden layers.
+
+    Parameters
+    ----------
+    hidden_dim : int
+        Dimension of the first hidden layer (encoder input or decoder output).
+    latent_dim : int
+        Dimension of the latent space (encoder output or decoder input).
+    depth : int
+        Number of hidden layers.
+    strategy : str, optional
+        Scaling strategy for hidden layer dimensions:
+        - "constant" or "c": All layers have the same width.
+        - "linear" or "l": Linearly decrease/increase the width.
+        - "geometric" or "g": Geometrically decrease/increase the width.
+        Default is "constant".
+    order : str, optional
+        Order of dimensions:
+        - "decreasing": Generate dimensions for encoder (hidden_dim -> latent_dim).
+        - "increasing": Generate dimensions for decoder (latent_dim -> hidden_dim).
+        Default is "decreasing".
+
+    Yields
+    ------
+    tuple of int
+        A tuple representing (input_dim_{i}, output_dim_{i}) for each layer.
+    """
+    if depth < 0:
+        raise ValueError("Depth must be non-negative.")
+    
+    # Generate dimensions based on strategy
+    if strategy in ["constant", 'c']:
+        dims = np.full(depth + 2, hidden_dim, dtype=int)
+    elif strategy in ["linear", 'l']:
+        dims = np.linspace(hidden_dim, latent_dim, depth + 2, dtype=int)
+    elif strategy in ["geometric", 'g']:
+        dims = hidden_dim * (latent_dim / hidden_dim) ** np.linspace(0, 1, depth + 2)
+        dims = dims.astype(int)
+    else:
+        raise ValueError(f"Unknown strategy: {strategy}")
+
+    # Adjust order for encoder or decoder
+    if order == "increasing":
+        dims = dims[::-1]
+    elif order != "decreasing":
+        raise ValueError(f"Unknown order: {order}. Must be 'decreasing' or 'increasing'.")
+
+    # Generate layer tuples
+    for i in range(len(dims)-2):
+        yield dims[i], dims[i + 1]
