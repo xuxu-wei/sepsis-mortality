@@ -226,7 +226,7 @@ if RUN_MODE=='tuning':
                             epochs=2000, 
                             early_stopping=True, 
                             patience=fit_patience,
-                            verbose=1, 
+                            verbose=IN_NOTEBOOK, 
                             animate_monitor=False,
                             plot_path=None,
                             save_weights_path=None)
