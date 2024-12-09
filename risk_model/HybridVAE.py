@@ -889,7 +889,6 @@ class HybridVAEMultiTaskModel(nn.Module):
 
         return self
 
-
     def plot_loss(self, train_vae_losses, train_task_losses, val_vae_losses, val_task_losses, train_aucs, val_aucs, save_path=None):
         """
         Plot training and validation loss curves for VAE, task-specific losses, and AUC.
@@ -911,36 +910,36 @@ class HybridVAEMultiTaskModel(nn.Module):
         save_path : str or None
             Path to save the plot image. If None, dynamically display in a notebook.
         """
-        plt.figure(figsize=(15, 12))
+        plt.figure(figsize=(21, 5))  # Adjust figure size for horizontal layout
 
         # VAE Loss Plot
-        plt.subplot(3, 1, 1)
+        plt.subplot(1, 3, 1)
         plt.plot(train_vae_losses, label='Train VAE Loss', linestyle='-')
-        plt.plot(val_vae_losses, label='Val VAE Loss', linestyle='--')
+        plt.plot(val_vae_losses, label='Val VAE Loss', linestyle='-')
         plt.xlabel('Epochs')
         plt.ylabel('Reconstruction + KL')
         plt.legend()
         plt.title('VAE Loss (Reconstruction + KL)')
         plt.grid()
 
-        # Task Loss Plot
-        plt.subplot(3, 1, 2)
-        plt.plot(train_task_losses, label='Train Task Loss', linestyle='-')
-        plt.plot(val_task_losses, label='Val Task Loss', linestyle='--')
-        plt.xlabel('Epochs')
-        plt.ylabel('BCE')
-        plt.legend()
-        plt.title('Task Loss (Binary Cross-Entropy)')
-        plt.grid()
-
         # AUC Plot
-        plt.subplot(3, 1, 3)
+        plt.subplot(1, 3, 2)
         plt.plot(train_aucs, label='Train AUC (Mean)', linestyle='-')
-        plt.plot(val_aucs, label='Val AUC (Mean)', linestyle='--')
+        plt.plot(val_aucs, label='Val AUC (Mean)', linestyle='-')
         plt.xlabel('Epochs')
         plt.ylabel('AUC')
         plt.legend()
         plt.title('AUC Scores (Mean Across Tasks)')
+        plt.grid()
+
+        # Task Loss Plot
+        plt.subplot(1, 3, 3)
+        plt.plot(train_task_losses, label='Train Task Loss', linestyle='-')
+        plt.plot(val_task_losses, label='Val Task Loss', linestyle='-')
+        plt.xlabel('Epochs')
+        plt.ylabel('BCE')
+        plt.legend()
+        plt.title('Task Loss (Binary Cross-Entropy)')
         plt.grid()
 
         plt.tight_layout()
